@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>田字格拼音练习生成器</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="preview-pane" aria-label="练习纸预览">
+      <div id="pagesPreview" class="pages-preview"></div>
+    </section>
+
+    <aside class="control-pane">
+      <div class="panel-title">
+        <div>
+          <h1>田字格拼音工具</h1>
+          <p>输入文字后自动生成带声调拼音练习格。</p>
+        </div>
+        <div class="title-actions">
+          <button class="secondary-button" id="exportPdfBtn" type="button">导出PDF</button>
+          <button class="primary-button" id="printBtn" type="button">打印</button>
+        </div>
+      </div>
+
+      <div class="page-nav" aria-label="页面编辑">
+        <button id="prevPageBtn" type="button">上一页</button>
+        <span id="pageIndicator">第 1 页 / 共 1 页</span>
+        <button id="nextPageBtn" type="button">下一页</button>
+        <button id="newPageBtn" type="button">新建空白页</button>
+        <button id="flipMarkersBtn" type="button">翻转辅助/问题标记</button>
+        <button id="resetBtn" type="button">重置为空白页</button>
+      </div>
+
+      <label class="field">
+        <span>看拼音写汉字内容</span>
+        <textarea id="textInput" rows="7">小明背着书包去学校。
+妈妈说：“今天要认真听讲。”</textarea>
+      </label>
+
+      <label class="field">
+        <span>看汉字写拼音内容</span>
+        <textarea id="textInputPinyin" rows="5">春天来了，花儿开了。</textarea>
+      </label>
+
+      <div class="settings-grid">
+        <label class="field compact">
+          <span>田字格颜色</span>
+          <input id="gridColor" type="color" value="#ff7a45">
+        </label>
+        <label class="field compact">
+          <span>文字颜色</span>
+          <input id="textColor" type="color" value="#1f2937">
+        </label>
+        <label class="field compact">
+          <span>拼音颜色</span>
+          <input id="pinyinColor" type="color" value="#64748b">
+        </label>
+        <label class="field compact">
+          <span>格子大小</span>
+          <select id="cellSize">
+            <option value="16">16 mm 试卷紧凑</option>
+            <option value="18" selected>18 mm 常规</option>
+            <option value="20">20 mm 田字格本</option>
+            <option value="22">22 mm 低年级</option>
+          </select>
+        </label>
+        <label class="field compact">
+          <span>每行格数</span>
+          <input id="columns" type="number" min="6" max="16" value="10">
+        </label>
+        <label class="field compact">
+          <span>行间距</span>
+          <input id="rowGap" type="number" min="0" max="12" value="2" step="0.5">
+        </label>
+        <label class="field compact">
+          <span>文字大小</span>
+          <input id="hanziScale" type="number" min="70" max="130" value="105" step="5">
+        </label>
+        <label class="field compact">
+          <span>拼音大小</span>
+          <input id="pinyinScale" type="number" min="80" max="160" value="150" step="5">
+        </label>
+        <label class="field compact">
+          <span>拼音格式</span>
+          <select id="toneType">
+            <option value="symbol" selected>声调符号</option>
+            <option value="num">数字声调</option>
+            <option value="none">无声调</option>
+          </select>
+        </label>
+        <label class="field compact">
+          <span>答案页位置</span>
+          <select id="answerPlacement">
+            <option value="after-each" selected>每页题目后面</option>
+            <option value="after-all">全部题目后面</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <label><input id="showPunctuation" type="checkbox" checked> 显示标点</label>
+        <label><input id="showGuides" type="checkbox" checked> 显示虚线</label>
+        <label><input id="includeAnswers" type="checkbox" checked> 生成答案页</label>
+      </div>
+
+      <label class="field">
+        <span>页眉标题</span>
+        <input id="sheetTitle" type="text" value="拼音田字格练习">
+      </label>
+
+      <p class="status" id="status"></p>
+    </aside>
+  </main>
+
+  <script src="https://unpkg.com/pinyin-pro@3.28.1/dist/index.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
