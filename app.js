@@ -26,6 +26,10 @@ const els = {
   prevPageBtn: document.querySelector("#prevPageBtn"),
   nextPageBtn: document.querySelector("#nextPageBtn"),
   newPageBtn: document.querySelector("#newPageBtn"),
+  deletePageBtn: document.querySelector("#deletePageBtn"),
+  exportTextBtn: document.querySelector("#exportTextBtn"),
+  importTextBtn: document.querySelector("#importTextBtn"),
+  importTextFile: document.querySelector("#importTextFile"),
   flipMarkersBtn: document.querySelector("#flipMarkersBtn"),
   resetBtn: document.querySelector("#resetBtn"),
   pageIndicator: document.querySelector("#pageIndicator"),
@@ -463,6 +467,73 @@ els.newPageBtn.addEventListener("click", () => {
   loadActivePageToInputs();
   render();
   saveState();
+});
+
+els.deletePageBtn.addEventListener("click", () => {
+  if (pages.length <= 1) {
+    pages = [createPage()];
+    activePageIndex = 0;
+  } else {
+    pages.splice(activePageIndex, 1);
+    activePageIndex = Math.min(activePageIndex, pages.length - 1);
+  }
+  loadActivePageToInputs();
+  render();
+  saveState();
+});
+
+els.exportTextBtn.addEventListener("click", () => {
+  syncActivePageFromInputs();
+  const payload = {
+    type: "pinyin-tianzige-pages",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    pages,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const date = new Date().toISOString().slice(0, 10);
+  link.href = url;
+  link.download = `pinyin-tianzige-pages-${date}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  els.status.textContent = `已导出 ${pages.length} 页文字。`;
+});
+
+els.importTextBtn.addEventListener("click", () => {
+  els.importTextFile.click();
+});
+
+els.importTextFile.addEventListener("change", async () => {
+  const file = els.importTextFile.files?.[0];
+  els.importTextFile.value = "";
+  if (!file) {
+    return;
+  }
+
+  try {
+    const payload = JSON.parse(await file.text());
+    if (payload?.type !== "pinyin-tianzige-pages" || !Array.isArray(payload.pages)) {
+      throw new Error("Invalid export file");
+    }
+
+    const importedPages = payload.pages.map((page) => createPage(page.textInput || "", page.textInputPinyin || ""));
+    if (importedPages.length === 0) {
+      throw new Error("Empty export file");
+    }
+
+    pages = importedPages;
+    activePageIndex = 0;
+    loadActivePageToInputs();
+    render();
+    saveState();
+    els.status.textContent = `已导入 ${pages.length} 页文字。`;
+  } catch {
+    els.status.textContent = "导入失败，请选择本工具导出的 JSON 文件。";
+  }
 });
 
 els.flipMarkersBtn.addEventListener("click", () => {
