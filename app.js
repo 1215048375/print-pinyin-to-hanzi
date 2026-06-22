@@ -5,7 +5,9 @@ const els = {
   root: document.documentElement,
   pagesPreview: document.querySelector("#pagesPreview"),
   textInput: document.querySelector("#textInput"),
+  pinyinInput: document.querySelector("#pinyinInput"),
   textInputPinyin: document.querySelector("#textInputPinyin"),
+  pinyinInputPinyin: document.querySelector("#pinyinInputPinyin"),
   gridColor: document.querySelector("#gridColor"),
   textColor: document.querySelector("#textColor"),
   pinyinColor: document.querySelector("#pinyinColor"),
@@ -58,8 +60,8 @@ let isRestoring = false;
 let pages = [];
 let activePageIndex = 0;
 
-function createPage(textInput = "", textInputPinyin = "") {
-  return { textInput, textInputPinyin };
+function createPage(textInput = "", textInputPinyin = "", pinyinInput = "", pinyinInputPinyin = "") {
+  return { textInput, textInputPinyin, pinyinInput, pinyinInputPinyin };
 }
 
 function loadState() {
@@ -92,10 +94,17 @@ function restoreState() {
   isRestoring = true;
 
   if (Array.isArray(state.pages) && state.pages.length > 0) {
-    pages = state.pages.map((page) => createPage(page.textInput || "", page.textInputPinyin || ""));
+    pages = state.pages.map((page) => createPage(
+      page.textInput || "",
+      page.textInputPinyin || "",
+      page.pinyinInput || autoPinyinText(page.textInput || ""),
+      page.pinyinInputPinyin || autoPinyinText(page.textInputPinyin || "")
+    ));
     activePageIndex = Math.min(Math.max(Number(state.activePageIndex) || 0, 0), pages.length - 1);
   } else {
-    pages = [createPage(state.textInput ?? els.textInput.value, state.textInputPinyin ?? els.textInputPinyin.value)];
+    const textInput = state.textInput ?? els.textInput.value;
+    const textInputPinyin = state.textInputPinyin ?? els.textInputPinyin.value;
+    pages = [createPage(textInput, textInputPinyin, autoPinyinText(textInput), autoPinyinText(textInputPinyin))];
     activePageIndex = 0;
   }
 
@@ -121,12 +130,16 @@ function syncActivePageFromInputs() {
   }
   pages[activePageIndex].textInput = els.textInput.value;
   pages[activePageIndex].textInputPinyin = els.textInputPinyin.value;
+  pages[activePageIndex].pinyinInput = els.pinyinInput.value;
+  pages[activePageIndex].pinyinInputPinyin = els.pinyinInputPinyin.value;
 }
 
 function loadActivePageToInputs() {
   const page = pages[activePageIndex] || createPage();
   els.textInput.value = page.textInput;
   els.textInputPinyin.value = page.textInputPinyin;
+  els.pinyinInput.value = page.pinyinInput || autoPinyinText(page.textInput || "");
+  els.pinyinInputPinyin.value = page.pinyinInputPinyin || autoPinyinText(page.textInputPinyin || "");
   updatePageControls();
 }
 
@@ -141,14 +154,14 @@ const isPunctuation = (char) => /[\s，。！？；：“”‘’、,.!?;:"'（
 const isSpace = (char) => char === " " || char === "\t";
 const commonVerbChars = new Set("走跑跳看说讲读写听唱笑哭吃喝拿放坐站来去回进出做");
 
-function getPinyinList(text) {
+function getPinyinList(text, toneType = els.toneType.value) {
   if (!pinyin) {
     return [];
   }
 
   return pinyin(text, {
     type: "array",
-    toneType: els.toneType.value,
+    toneType,
     nonZh: "removed",
   });
 }
@@ -198,11 +211,91 @@ function flipQuestionMarkers(text) {
   return output;
 }
 
-function pinyinDe() {
-  if (els.toneType.value === "num") {
+function pinyinDe(toneType = els.toneType.value) {
+  if (toneType === "num") {
     return "de5";
   }
   return "de";
+}
+
+function autoPinyinText(text) {
+  const chars = parseQuestionText(text);
+  const cleanText = chars.map(({ char }) => char).join("");
+  const list = getPinyinList(cleanText, "num");
+  const items = buildItems(chars, list, "num");
+  return items
+    .filter((item) => isChinese(item.char))
+    .map((item) => item.py)
+    .join(" ");
+}
+
+function pinyinTokens(text) {
+  return text.trim().split(/\s+/).filter(Boolean);
+}
+
+function stripToneMarks(value) {
+  const toneMap = {
+    ā: "a", á: "a", ǎ: "a", à: "a",
+    ē: "e", é: "e", ě: "e", è: "e",
+    ī: "i", í: "i", ǐ: "i", ì: "i",
+    ō: "o", ó: "o", ǒ: "o", ò: "o",
+    ū: "u", ú: "u", ǔ: "u", ù: "u",
+    ǖ: "ü", ǘ: "ü", ǚ: "ü", ǜ: "ü",
+  };
+  return [...value].map((char) => toneMap[char] || char).join("");
+}
+
+function convertPinyinToken(token, toneType = els.toneType.value) {
+  const match = token.match(/^([a-züv:]+)([0-5])$/i);
+  if (!match) {
+    return toneType === "none" ? stripToneMarks(token).replace(/[0-5]$/, "") : token;
+  }
+
+  const rawBase = match[1].replace(/u:/gi, "ü").replace(/v/gi, "ü");
+  const tone = Number(match[2]);
+  if (toneType === "num") {
+    return `${rawBase}${tone}`;
+  }
+  if (toneType === "none" || tone === 0 || tone === 5) {
+    return rawBase;
+  }
+
+  const toneMarks = {
+    a: ["ā", "á", "ǎ", "à"],
+    e: ["ē", "é", "ě", "è"],
+    i: ["ī", "í", "ǐ", "ì"],
+    o: ["ō", "ó", "ǒ", "ò"],
+    u: ["ū", "ú", "ǔ", "ù"],
+    "ü": ["ǖ", "ǘ", "ǚ", "ǜ"],
+  };
+  const chars = [...rawBase];
+  let markIndex = chars.findIndex((char) => char === "a");
+  if (markIndex === -1) markIndex = chars.findIndex((char) => char === "e");
+  if (markIndex === -1) markIndex = rawBase.includes("ou") ? chars.findIndex((char) => char === "o") : -1;
+  if (markIndex === -1) {
+    for (let i = chars.length - 1; i >= 0; i -= 1) {
+      if ("ioüu".includes(chars[i])) {
+        markIndex = i;
+        break;
+      }
+    }
+  }
+  if (markIndex === -1) {
+    return rawBase;
+  }
+  chars[markIndex] = toneMarks[chars[markIndex]]?.[tone - 1] || chars[markIndex];
+  return chars.join("");
+}
+
+function convertPinyinList(tokens, toneType = els.toneType.value) {
+  return tokens.map((token) => convertPinyinToken(token, toneType));
+}
+
+function mergedPinyinTokens(text, pinyinText) {
+  const manual = pinyinTokens(pinyinText);
+  const automatic = pinyinTokens(autoPinyinText(text));
+  const length = Math.max(manual.length, automatic.length);
+  return Array.from({ length }, (_, index) => manual[index] || automatic[index] || "");
 }
 
 function nearestChinese(chars, start, step) {
@@ -230,7 +323,7 @@ function isAdverbialDe(chars, index) {
   return prev === prevPrev || commonVerbChars.has(next);
 }
 
-function buildItems(chars, pinyinList) {
+function buildItems(chars, pinyinList, toneType = els.toneType.value) {
   let pyIndex = 0;
 
   return chars.filter(({ char }) => char !== "\r").map(({ char, question }, index, filteredChars) => {
@@ -241,7 +334,7 @@ function buildItems(chars, pinyinList) {
     if (isChinese(char)) {
       let py = pinyinList[pyIndex] || "";
       if (char === "地" && isAdverbialDe(filteredChars, index)) {
-        py = pinyinDe();
+        py = pinyinDe(toneType);
       }
       pyIndex += 1;
       return { char, py, punctuation: false, question };
@@ -315,16 +408,15 @@ function render() {
     return cell;
   }
 
-  function renderTextSection(worksheet, label, text, visibility) {
+  function renderTextSection(worksheet, label, text, pinyinText, visibility) {
     if (!text) {
       return 0;
     }
 
     appendSectionLabel(worksheet, label);
     const chars = parseQuestionText(text);
-    const cleanText = chars.map(({ char }) => char).join("");
-    const list = getPinyinList(cleanText);
-    const items = buildItems(chars, list);
+    const list = convertPinyinList(mergedPinyinTokens(text, pinyinText), els.toneType.value);
+    const items = buildItems(chars, list, els.toneType.value);
     let sectionUsed = 0;
     let gridIndex = 0;
     let lastCell = null;
@@ -404,6 +496,8 @@ function render() {
     let pageUsed = 0;
     const pinyinToHanziText = (page.textInput || "").trim();
     const hanziToPinyinText = (page.textInputPinyin || "").trim();
+    const pinyinToHanziPinyin = page.pinyinInput || autoPinyinText(page.textInput || "");
+    const hanziToPinyinPinyin = page.pinyinInputPinyin || autoPinyinText(page.textInputPinyin || "");
     const isBlankPage = !pinyinToHanziText && !hanziToPinyinText;
 
     if (!answerMode && isBlankPage && els.fillBlankPage.checked) {
@@ -415,6 +509,7 @@ function render() {
       worksheet,
       answerMode ? "答案：看拼音写汉字" : "看拼音写汉字",
       pinyinToHanziText,
+      pinyinToHanziPinyin,
       answerMode
         ? { showPinyin: true, showHanzi: true, highlightHanzi: true }
         : { showPinyin: true, showHanzi: false }
@@ -423,6 +518,7 @@ function render() {
       worksheet,
       answerMode ? "答案：看汉字写拼音" : "看汉字写拼音",
       hanziToPinyinText,
+      hanziToPinyinPinyin,
       answerMode
         ? { showPinyin: true, showHanzi: true, highlightPinyin: true }
         : { showPinyin: false, showHanzi: true }
@@ -453,9 +549,12 @@ function render() {
     : "拼音库未加载，请联网后刷新，或改为本地离线库。";
 }
 
+function refreshPinyinBoxesFromText() {
+  els.pinyinInput.value = autoPinyinText(els.textInput.value);
+  els.pinyinInputPinyin.value = autoPinyinText(els.textInputPinyin.value);
+}
+
 [
-  els.textInput,
-  els.textInputPinyin,
   els.gridColor,
   els.textColor,
   els.pinyinColor,
@@ -472,6 +571,20 @@ function render() {
   els.fillBlankPage,
   els.sheetTitle,
 ].forEach((el) => el.addEventListener("input", () => {
+  render();
+  saveState();
+}));
+
+[els.pinyinInput, els.pinyinInputPinyin].forEach((el) => el.addEventListener("input", () => {
+  render();
+  saveState();
+}));
+
+[
+  { text: els.textInput, py: els.pinyinInput },
+  { text: els.textInputPinyin, py: els.pinyinInputPinyin },
+].forEach(({ text, py }) => text.addEventListener("input", () => {
+  py.value = autoPinyinText(text.value);
   render();
   saveState();
 }));
@@ -552,7 +665,12 @@ els.importTextFile.addEventListener("change", async () => {
       throw new Error("Invalid export file");
     }
 
-    const importedPages = payload.pages.map((page) => createPage(page.textInput || "", page.textInputPinyin || ""));
+    const importedPages = payload.pages.map((page) => createPage(
+      page.textInput || "",
+      page.textInputPinyin || "",
+      page.pinyinInput || autoPinyinText(page.textInput || ""),
+      page.pinyinInputPinyin || autoPinyinText(page.textInputPinyin || "")
+    ));
     if (importedPages.length === 0) {
       throw new Error("Empty export file");
     }
