@@ -6,8 +6,10 @@ const els = {
   pagesPreview: document.querySelector("#pagesPreview"),
   textInput: document.querySelector("#textInput"),
   pinyinInput: document.querySelector("#pinyinInput"),
+  pinyinPairEditor: document.querySelector("#pinyinPairEditor"),
   textInputPinyin: document.querySelector("#textInputPinyin"),
   pinyinInputPinyin: document.querySelector("#pinyinInputPinyin"),
+  pinyinPairEditorPinyin: document.querySelector("#pinyinPairEditorPinyin"),
   gridColor: document.querySelector("#gridColor"),
   textColor: document.querySelector("#textColor"),
   pinyinColor: document.querySelector("#pinyinColor"),
@@ -140,6 +142,7 @@ function loadActivePageToInputs() {
   els.textInputPinyin.value = page.textInputPinyin;
   els.pinyinInput.value = page.pinyinInput || autoPinyinText(page.textInput || "");
   els.pinyinInputPinyin.value = page.pinyinInputPinyin || autoPinyinText(page.textInputPinyin || "");
+  renderPinyinPairEditors();
   updatePageControls();
 }
 
@@ -296,6 +299,117 @@ function mergedPinyinTokens(text, pinyinText) {
   const automatic = pinyinTokens(autoPinyinText(text));
   const length = Math.max(manual.length, automatic.length);
   return Array.from({ length }, (_, index) => manual[index] || automatic[index] || "");
+}
+
+function chineseCharsFromText(text) {
+  return parseQuestionText(text)
+    .filter(({ char }) => isChinese(char))
+    .map(({ char }) => char);
+}
+
+function mapChineseIndexesByLcs(oldChars, newChars) {
+  const dp = Array.from(
+    { length: oldChars.length + 1 },
+    () => Array(newChars.length + 1).fill(0)
+  );
+
+  for (let i = oldChars.length - 1; i >= 0; i -= 1) {
+    for (let j = newChars.length - 1; j >= 0; j -= 1) {
+      dp[i][j] = oldChars[i] === newChars[j]
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  const map = new Map();
+  let i = 0;
+  let j = 0;
+  while (i < oldChars.length && j < newChars.length) {
+    if (oldChars[i] === newChars[j]) {
+      map.set(j, i);
+      i += 1;
+      j += 1;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      i += 1;
+    } else {
+      j += 1;
+    }
+  }
+
+  return map;
+}
+
+function preservePinyinAfterTextEdit(oldText, newText, oldPinyinText) {
+  if (oldText === newText) {
+    return oldPinyinText;
+  }
+
+  const oldChars = chineseCharsFromText(oldText);
+  const newChars = chineseCharsFromText(newText);
+  const oldTokens = pinyinTokens(oldPinyinText);
+  const automatic = pinyinTokens(autoPinyinText(newText));
+  const oldIndexByNewIndex = mapChineseIndexesByLcs(oldChars, newChars);
+
+  return newChars
+    .map((_, newIndex) => {
+      const oldIndex = oldIndexByNewIndex.get(newIndex);
+      return oldIndex !== undefined && oldTokens[oldIndex]
+        ? oldTokens[oldIndex]
+        : automatic[newIndex] || "";
+    })
+    .join(" ");
+}
+
+function pinyinTokensForEditor(text, pinyinText) {
+  const chars = chineseCharsFromText(text);
+  const manual = pinyinTokens(pinyinText);
+  const automatic = pinyinTokens(autoPinyinText(text));
+  return chars.map((_, index) => manual[index] || automatic[index] || "");
+}
+
+function renderPinyinPairEditor(container, text, pinyinText) {
+  container.replaceChildren();
+  const chars = chineseCharsFromText(text);
+  if (chars.length === 0) {
+    return;
+  }
+
+  const tokens = pinyinTokensForEditor(text, pinyinText);
+  const fragment = document.createDocumentFragment();
+
+  chars.forEach((char, index) => {
+    const pair = document.createElement("label");
+    pair.className = "pinyin-pair";
+
+    const charBox = document.createElement("span");
+    charBox.className = "pinyin-pair-char";
+    charBox.textContent = char;
+
+    const input = document.createElement("input");
+    input.className = "pinyin-pair-input";
+    input.type = "text";
+    input.value = tokens[index] || "";
+    input.dataset.index = String(index);
+    input.autocomplete = "off";
+    input.spellcheck = false;
+
+    pair.append(charBox, input);
+    fragment.append(pair);
+  });
+
+  container.append(fragment);
+}
+
+function renderPinyinPairEditors() {
+  renderPinyinPairEditor(els.pinyinPairEditor, els.textInput.value, els.pinyinInput.value);
+  renderPinyinPairEditor(els.pinyinPairEditorPinyin, els.textInputPinyin.value, els.pinyinInputPinyin.value);
+}
+
+function syncPinyinInputFromPairEditor(container, pinyinInput, text) {
+  const automatic = pinyinTokens(autoPinyinText(text));
+  const tokens = [...container.querySelectorAll(".pinyin-pair-input")]
+    .map((input, index) => input.value.replace(/\s+/g, "") || automatic[index] || "");
+  pinyinInput.value = tokens.join(" ");
 }
 
 function nearestChinese(chars, start, step) {
@@ -577,6 +691,20 @@ function refreshPinyinBoxesFromText() {
 
 [els.pinyinInput, els.pinyinInputPinyin].forEach((el) => el.addEventListener("input", () => {
   render();
+  renderPinyinPairEditors();
+  saveState();
+}));
+
+[
+  { editor: els.pinyinPairEditor, text: els.textInput, py: els.pinyinInput },
+  { editor: els.pinyinPairEditorPinyin, text: els.textInputPinyin, py: els.pinyinInputPinyin },
+].forEach(({ editor, text, py }) => editor.addEventListener("input", (event) => {
+  if (!event.target.classList.contains("pinyin-pair-input")) {
+    return;
+  }
+  event.target.value = event.target.value.replace(/\s+/g, "");
+  syncPinyinInputFromPairEditor(editor, py, text.value);
+  render();
   saveState();
 }));
 
@@ -584,8 +712,11 @@ function refreshPinyinBoxesFromText() {
   { text: els.textInput, py: els.pinyinInput },
   { text: els.textInputPinyin, py: els.pinyinInputPinyin },
 ].forEach(({ text, py }) => text.addEventListener("input", () => {
-  py.value = autoPinyinText(text.value);
+  const page = pages[activePageIndex] || createPage();
+  const oldText = text === els.textInput ? page.textInput : page.textInputPinyin;
+  py.value = preservePinyinAfterTextEdit(oldText, text.value, py.value);
   render();
+  renderPinyinPairEditors();
   saveState();
 }));
 

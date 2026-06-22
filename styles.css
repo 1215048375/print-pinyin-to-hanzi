@@ -321,6 +321,50 @@ textarea {
   line-height: 1.65;
 }
 
+.pinyin-pair-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 220px;
+  margin: -6px 0 14px;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid #d7dee8;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.pinyin-pair-editor:empty {
+  display: none;
+}
+
+.pinyin-pair {
+  width: 72px;
+  display: grid;
+  gap: 5px;
+}
+
+.pinyin-pair-char {
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #172033;
+  font-family: KaiTi, STKaiti, "Microsoft YaHei", serif;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.pinyin-pair-input {
+  height: 30px;
+  padding: 4px 6px;
+  text-align: center;
+  font-size: 13px;
+}
+
 .mode-grid,
 .settings-grid {
   display: grid;
