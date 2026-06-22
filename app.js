@@ -19,6 +19,7 @@ const els = {
   showPunctuation: document.querySelector("#showPunctuation"),
   showGuides: document.querySelector("#showGuides"),
   includeAnswers: document.querySelector("#includeAnswers"),
+  fillBlankPage: document.querySelector("#fillBlankPage"),
   sheetTitle: document.querySelector("#sheetTitle"),
   status: document.querySelector("#status"),
   printBtn: document.querySelector("#printBtn"),
@@ -49,6 +50,7 @@ const savedFields = [
   "showPunctuation",
   "showGuides",
   "includeAnswers",
+  "fillBlankPage",
   "sheetTitle",
 ];
 
@@ -367,6 +369,25 @@ function render() {
     return sectionUsed;
   }
 
+  function renderBlankPageGrid(worksheet) {
+    const cellSize = Number(els.cellSize.value) || 18;
+    const rowGap = Number(els.rowGap.value) || 0;
+    const contentHeight = 297 - 28;
+    const rowHeight = cellSize * 1.42;
+    const rows = Math.max(1, Math.floor((contentHeight + rowGap) / (rowHeight + rowGap)));
+    const totalCells = rows * columns;
+
+    let lastCell = null;
+    for (let i = 0; i < totalCells; i += 1) {
+      const cell = makeCell({ char: "", py: "", punctuation: false }, i, { showPinyin: true, showHanzi: true });
+      worksheet.append(cell);
+      lastCell = cell;
+    }
+    if (lastCell) {
+      lastCell.classList.add("last-cell");
+    }
+  }
+
   function createPaper(answerMode = false) {
     const paper = document.createElement("div");
     paper.className = `paper${answerMode ? " answer-paper" : ""}`;
@@ -383,6 +404,12 @@ function render() {
     let pageUsed = 0;
     const pinyinToHanziText = (page.textInput || "").trim();
     const hanziToPinyinText = (page.textInputPinyin || "").trim();
+    const isBlankPage = !pinyinToHanziText && !hanziToPinyinText;
+
+    if (!answerMode && isBlankPage && els.fillBlankPage.checked) {
+      renderBlankPageGrid(worksheet);
+      return 0;
+    }
 
     pageUsed += renderTextSection(
       worksheet,
@@ -407,13 +434,17 @@ function render() {
   let used = 0;
   pages.forEach((page) => {
     used += renderPage(createPaper(false), page, false);
-    if (els.includeAnswers.checked && els.answerPlacement.value === "after-each") {
+    const pageHasText = (page.textInput || "").trim() || (page.textInputPinyin || "").trim();
+    if (pageHasText && els.includeAnswers.checked && els.answerPlacement.value === "after-each") {
       renderPage(createPaper(true), page, true);
     }
   });
   if (els.includeAnswers.checked && els.answerPlacement.value === "after-all") {
     pages.forEach((page) => {
-      renderPage(createPaper(true), page, true);
+      const pageHasText = (page.textInput || "").trim() || (page.textInputPinyin || "").trim();
+      if (pageHasText) {
+        renderPage(createPaper(true), page, true);
+      }
     });
   }
 
@@ -438,6 +469,7 @@ function render() {
   els.showPunctuation,
   els.showGuides,
   els.includeAnswers,
+  els.fillBlankPage,
   els.sheetTitle,
 ].forEach((el) => el.addEventListener("input", () => {
   render();

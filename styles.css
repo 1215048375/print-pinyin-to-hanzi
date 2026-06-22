@@ -37,7 +37,7 @@ body {
   flex-direction: column;
   gap: 18px;
   justify-content: flex-start;
-  align-items: flex-start;
+  align-items: center;
 }
 
 .pages-preview {
