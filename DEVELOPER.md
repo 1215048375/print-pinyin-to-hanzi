@@ -62,6 +62,7 @@ pinyin-tianzige-settings-v1
 - `textInputPinyin`：看汉字写拼音区域的原文。
 - `pinyinInput` / `pinyinInputPinyin`：隐藏的拼音源文本，仍用于保存、导入导出和小格同步。
 - `textInputQuestions` / `textInputPinyinQuestions`：被选为题目隐藏项的汉字序号数组，只按汉字计数，不包含空格和标点。
+- `pinyinDictVersion`：当前拼音词典版本。版本变化时会刷新旧的隐藏拼音缓存，避免旧词典结果继续覆盖新词典结果。
 
 设置项如颜色、格子大小、拼音格式、答案页位置等也一起保存在同一个状态对象中。
 

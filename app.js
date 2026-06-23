@@ -1,6 +1,7 @@
 const pinyin = window.pinyinPro?.pinyin;
 const addPinyinDict = window.pinyinPro?.addDict;
 const completePinyinDictLoaded = Boolean(addPinyinDict && window.PinyinProCompleteDict);
+const PINYIN_DICT_VERSION = "pinyin-pro-3.28.1-complete-1.3.1";
 
 if (completePinyinDictLoaded) {
   addPinyinDict(window.PinyinProCompleteDict, "complete");
@@ -106,6 +107,7 @@ function saveState() {
   const state = {
     pages,
     activePageIndex,
+    pinyinDictVersion: PINYIN_DICT_VERSION,
   };
   for (const key of savedFields) {
     const el = els[key];
@@ -119,11 +121,12 @@ function restoreState() {
   isRestoring = true;
 
   if (Array.isArray(state.pages) && state.pages.length > 0) {
+    const shouldRefreshPinyinCache = state.pinyinDictVersion !== PINYIN_DICT_VERSION;
     pages = state.pages.map((page) => createPage(
       page.textInput || "",
       page.textInputPinyin || "",
-      page.pinyinInput || autoPinyinText(page.textInput || ""),
-      page.pinyinInputPinyin || autoPinyinText(page.textInputPinyin || ""),
+      shouldRefreshPinyinCache ? autoPinyinText(page.textInput || "") : page.pinyinInput || autoPinyinText(page.textInput || ""),
+      shouldRefreshPinyinCache ? autoPinyinText(page.textInputPinyin || "") : page.pinyinInputPinyin || autoPinyinText(page.textInputPinyin || ""),
       page.textInputQuestions,
       page.textInputPinyinQuestions
     ));
