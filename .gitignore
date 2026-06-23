@@ -1,0 +1,4 @@
+.gocache/
+frontend/
+build/bin/
+build/windows/
