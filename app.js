@@ -1416,6 +1416,7 @@ els.clearAiCacheBtn.addEventListener("click", () => {
   { editor: els.pinyinPairEditor, key: "textInputQuestions" },
   { editor: els.pinyinPairEditorPinyin, key: "textInputPinyinQuestions" },
 ].forEach(({ editor, key }) => editor.addEventListener("click", (event) => {
+  event.stopPropagation();
   if (event.target === editor) {
     editor.classList.toggle("is-expanded");
     return;
