@@ -48,6 +48,7 @@ const els = {
   aiModel: document.querySelector("#aiModel"),
   aiDebugRequest: document.querySelector("#aiDebugRequest"),
   aiDebugResponse: document.querySelector("#aiDebugResponse"),
+  retryAiBtn: document.querySelector("#retryAiBtn"),
   clearAiCacheBtn: document.querySelector("#clearAiCacheBtn"),
   sheetTitle: document.querySelector("#sheetTitle"),
   status: document.querySelector("#status"),
@@ -94,6 +95,7 @@ let activePageIndex = 0;
 const aiPinyinRequestIds = new WeakMap();
 let aiPinyinDebounceTimer = 0;
 let aiPinyinCache = loadAiPinyinCache();
+let activeAiTextTarget = null;
 
 function setStatus(message, kind = "info") {
   els.status.textContent = message;
@@ -180,6 +182,18 @@ function saveAiPinyinCache() {
 function clearAiPinyinCache() {
   aiPinyinCache = { version: AI_PINYIN_CACHE_VERSION, entries: {} };
   localStorage.removeItem(AI_PINYIN_CACHE_KEY);
+}
+
+function aiTargets() {
+  return [
+    { text: els.textInput, py: els.pinyinInput, label: "看拼音写汉字" },
+    { text: els.textInputPinyin, py: els.pinyinInputPinyin, label: "看汉字写拼音" },
+  ];
+}
+
+function currentAiTarget() {
+  const focused = aiTargets().find(({ text }) => text === document.activeElement);
+  return focused || activeAiTextTarget || aiTargets()[0];
 }
 
 function createPage(
@@ -522,14 +536,15 @@ function writeAiPinyinCache(text, tokens, config) {
   }
 }
 
-async function fetchAiPinyinTokens(text, label) {
+async function fetchAiPinyinTokens(text, label, options = {}) {
+  const { skipCache = false } = options;
   const config = aiConfig();
   const chars = chineseCharsFromText(text);
   if (chars.length === 0) {
     return { tokens: [], cached: false };
   }
 
-  const cachedTokens = readAiPinyinCache(text, config);
+  const cachedTokens = skipCache ? null : readAiPinyinCache(text, config);
   if (cachedTokens) {
     setAiDebug(
       {
@@ -570,6 +585,7 @@ async function fetchAiPinyinTokens(text, label) {
   setAiDebug({
     url: `${config.apiUrl}/chat/completions`,
     method: "POST",
+    skipCache,
     body: requestBody,
   }, "等待响应...");
 
@@ -592,6 +608,7 @@ async function fetchAiPinyinTokens(text, label) {
   setAiDebug({
     url: `${config.apiUrl}/chat/completions`,
     method: "POST",
+    skipCache,
     body: requestBody,
   }, {
     status: response.status,
@@ -615,8 +632,11 @@ async function fetchAiPinyinTokens(text, label) {
   return { tokens, cached: false };
 }
 
-async function updatePinyinWithAi(textEl, pyEl, label) {
+async function updatePinyinWithAi(textEl, pyEl, label, options = {}) {
   if (!canUseAiPinyin()) {
+    if (options.force) {
+      setStatus("请先打开 AI 正音，并填写 API URL、Token 和 Model。", "error");
+    }
     return;
   }
 
@@ -626,7 +646,7 @@ async function updatePinyinWithAi(textEl, pyEl, label) {
   setStatus(`AI 正在生成拼音：${label}...`, "pending");
 
   try {
-    const result = await fetchAiPinyinTokens(text, label);
+    const result = await fetchAiPinyinTokens(text, label, options);
     if (requestId !== aiPinyinRequestIds.get(textEl) || textEl.value !== text) {
       return;
     }
@@ -1195,6 +1215,20 @@ els.useCompleteDict.addEventListener("input", () => {
   saveState();
   scheduleAiPinyinRefresh(0);
 }));
+
+aiTargets().forEach((target) => {
+  target.text.addEventListener("focus", () => {
+    activeAiTextTarget = target;
+  });
+});
+
+els.retryAiBtn.addEventListener("click", () => {
+  const target = currentAiTarget();
+  updatePinyinWithAi(target.text, target.py, target.label, {
+    skipCache: true,
+    force: true,
+  });
+});
 
 els.clearAiCacheBtn.addEventListener("click", () => {
   clearAiPinyinCache();
