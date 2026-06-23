@@ -1,10 +1,17 @@
 const pinyin = window.pinyinPro?.pinyin;
 const addPinyinDict = window.pinyinPro?.addDict;
+const customPinyin = window.pinyinPro?.customPinyin;
 const completePinyinDictLoaded = Boolean(addPinyinDict && window.PinyinProCompleteDict);
-const PINYIN_DICT_VERSION = "pinyin-pro-3.28.1-complete-1.3.1";
+const PINYIN_DICT_VERSION = "pinyin-pro-3.28.1-complete-1.3.1-custom-de-1";
 
 if (completePinyinDictLoaded) {
   addPinyinDict(window.PinyinProCompleteDict, "complete");
+}
+
+if (customPinyin) {
+  customPinyin({
+    开心地: "kāi xīn de",
+  });
 }
 
 const STORAGE_KEY = "pinyin-tianzige-settings-v1";
@@ -185,7 +192,7 @@ function updatePageControls() {
 const isChinese = (char) => /\p{Script=Han}/u.test(char);
 const isPunctuation = (char) => /[\s，。！？；：“”‘’、,.!?;:"'（）()《》<>]/u.test(char);
 const isSpace = (char) => char === " " || char === "\t";
-const commonVerbChars = new Set("走跑跳看说讲读写听唱笑哭吃喝拿放坐站来去回进出做");
+const commonVerbChars = new Set("走跑跳爬看说讲读写听唱笑哭吃喝拿放坐站来去回进出做");
 
 function getPinyinList(text, toneType = els.toneType.value) {
   if (!pinyin) {

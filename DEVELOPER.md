@@ -76,6 +76,8 @@ pinyin-tianzige-settings-v1
 addPinyinDict(window.PinyinProCompleteDict, "complete");
 ```
 
+少量完整词典仍无法判断的短语，可通过 `customPinyin` 加自定义覆盖。例如当前对 `开心地` 注册为 `kāi xīn de`，用于处理结构助词“地”的轻声读音。
+
 `autoPinyinText(text)` 使用 `pinyin-pro` 生成数字声调拼音，并按汉字项输出空格分隔的拼音 token。
 
 ### 手动拼音保留
