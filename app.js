@@ -62,8 +62,24 @@ let isRestoring = false;
 let pages = [];
 let activePageIndex = 0;
 
-function createPage(textInput = "", textInputPinyin = "", pinyinInput = "", pinyinInputPinyin = "") {
-  return { textInput, textInputPinyin, pinyinInput, pinyinInputPinyin };
+function createPage(
+  textInput = "",
+  textInputPinyin = "",
+  pinyinInput = "",
+  pinyinInputPinyin = "",
+  textInputQuestions = null,
+  textInputPinyinQuestions = null
+) {
+  const pinyinToHanzi = normalizeQuestionField(textInput, textInputQuestions);
+  const hanziToPinyin = normalizeQuestionField(textInputPinyin, textInputPinyinQuestions);
+  return {
+    textInput: pinyinToHanzi.text,
+    textInputPinyin: hanziToPinyin.text,
+    pinyinInput,
+    pinyinInputPinyin,
+    textInputQuestions: pinyinToHanzi.questions,
+    textInputPinyinQuestions: hanziToPinyin.questions,
+  };
 }
 
 function loadState() {
@@ -100,7 +116,9 @@ function restoreState() {
       page.textInput || "",
       page.textInputPinyin || "",
       page.pinyinInput || autoPinyinText(page.textInput || ""),
-      page.pinyinInputPinyin || autoPinyinText(page.textInputPinyin || "")
+      page.pinyinInputPinyin || autoPinyinText(page.textInputPinyin || ""),
+      page.textInputQuestions,
+      page.textInputPinyinQuestions
     ));
     activePageIndex = Math.min(Math.max(Number(state.activePageIndex) || 0, 0), pages.length - 1);
   } else {
@@ -134,6 +152,8 @@ function syncActivePageFromInputs() {
   pages[activePageIndex].textInputPinyin = els.textInputPinyin.value;
   pages[activePageIndex].pinyinInput = els.pinyinInput.value;
   pages[activePageIndex].pinyinInputPinyin = els.pinyinInputPinyin.value;
+  pages[activePageIndex].textInputQuestions ||= [];
+  pages[activePageIndex].textInputPinyinQuestions ||= [];
 }
 
 function loadActivePageToInputs() {
@@ -169,9 +189,13 @@ function getPinyinList(text, toneType = els.toneType.value) {
   });
 }
 
-function parseQuestionText(text) {
+function parseQuestionText(text, selectedChineseIndexes = null) {
   const chars = [];
   let question = false;
+  let chineseIndex = 0;
+  const selected = Array.isArray(selectedChineseIndexes)
+    ? new Set(selectedChineseIndexes.map(Number).filter((index) => Number.isInteger(index) && index >= 0))
+    : null;
 
   for (let i = 0; i < text.length; i += 1) {
     if (text.startsWith("[[", i)) {
@@ -184,10 +208,34 @@ function parseQuestionText(text) {
       i += 1;
       continue;
     }
-    chars.push({ char: text[i], question });
+    const char = text[i];
+    const chinese = isChinese(char);
+    chars.push({
+      char,
+      question: chinese && (selected ? selected.has(chineseIndex) : question),
+      chineseIndex: chinese ? chineseIndex : undefined,
+    });
+    if (chinese) {
+      chineseIndex += 1;
+    }
   }
 
   return chars;
+}
+
+function normalizeQuestionField(text, savedQuestions = null) {
+  const chars = parseQuestionText(text);
+  const cleanText = chars.map(({ char }) => char).join("");
+  const chineseCount = chars.filter(({ char }) => isChinese(char)).length;
+  const questions = Array.isArray(savedQuestions)
+    ? savedQuestions
+      .map(Number)
+      .filter((index) => Number.isInteger(index) && index >= 0 && index < chineseCount)
+    : chars
+      .filter(({ char, question }) => isChinese(char) && question)
+      .map(({ chineseIndex }) => chineseIndex);
+
+  return { text: cleanText, questions: [...new Set(questions)] };
 }
 
 function flipQuestionMarkers(text) {
@@ -196,7 +244,7 @@ function flipQuestionMarkers(text) {
   let marking = false;
 
   for (const { char, question } of chars) {
-    const shouldMark = !question && char !== "\n";
+    const shouldMark = !question && isChinese(char);
     if (shouldMark && !marking) {
       output += "[[";
       marking = true;
@@ -360,6 +408,35 @@ function preservePinyinAfterTextEdit(oldText, newText, oldPinyinText) {
     .join(" ");
 }
 
+function preserveQuestionIndexesAfterTextEdit(oldText, newText, oldQuestionIndexes = []) {
+  const oldChars = chineseCharsFromText(oldText);
+  const newChars = chineseCharsFromText(newText);
+  const oldIndexByNewIndex = mapChineseIndexesByLcs(oldChars, newChars);
+  const selected = new Set(oldQuestionIndexes);
+
+  return newChars
+    .map((_, newIndex) => ({ newIndex, oldIndex: oldIndexByNewIndex.get(newIndex) }))
+    .filter(({ oldIndex }) => oldIndex !== undefined && selected.has(oldIndex))
+    .map(({ newIndex }) => newIndex);
+}
+
+function toggleQuestionIndex(questionIndexes, index) {
+  const selected = new Set(questionIndexes || []);
+  if (selected.has(index)) {
+    selected.delete(index);
+  } else {
+    selected.add(index);
+  }
+  return [...selected].sort((a, b) => a - b);
+}
+
+function invertQuestionIndexes(text, questionIndexes = []) {
+  const selected = new Set(questionIndexes);
+  return chineseCharsFromText(text)
+    .map((_, index) => index)
+    .filter((index) => !selected.has(index));
+}
+
 function pinyinTokensForEditor(text, pinyinText) {
   const chars = chineseCharsFromText(text);
   const manual = pinyinTokens(pinyinText);
@@ -367,42 +444,71 @@ function pinyinTokensForEditor(text, pinyinText) {
   return chars.map((_, index) => manual[index] || automatic[index] || "");
 }
 
-function renderPinyinPairEditor(container, text, pinyinText) {
+function renderPinyinPairEditor(container, text, pinyinText, questionIndexes = []) {
   container.replaceChildren();
-  const chars = chineseCharsFromText(text);
-  if (chars.length === 0) {
+  const chars = parseQuestionText(text, questionIndexes);
+  const hasEditableChars = chars.some(({ char }) => isChinese(char));
+  if (!hasEditableChars) {
     return;
   }
 
   const tokens = pinyinTokensForEditor(text, pinyinText);
   const fragment = document.createDocumentFragment();
+  let tokenIndex = 0;
+  let lastWasSpace = false;
 
-  chars.forEach((char, index) => {
-    const pair = document.createElement("label");
+  chars.forEach(({ char, question, chineseIndex }) => {
+    if (isSpace(char)) {
+      if (!lastWasSpace) {
+        const spacer = document.createElement("span");
+        spacer.className = "pinyin-pair-space";
+        fragment.append(spacer);
+      }
+      lastWasSpace = true;
+      return;
+    }
+    if (!isChinese(char)) {
+      lastWasSpace = false;
+      return;
+    }
+    lastWasSpace = false;
+
+    const pair = document.createElement("div");
     pair.className = "pinyin-pair";
+    pair.classList.toggle("is-selected", question);
 
-    const charBox = document.createElement("span");
+    const charBox = document.createElement("button");
     charBox.className = "pinyin-pair-char";
+    charBox.type = "button";
     charBox.textContent = char;
+    charBox.dataset.index = String(chineseIndex);
+    charBox.setAttribute("aria-pressed", question ? "true" : "false");
 
     const input = document.createElement("input");
     input.className = "pinyin-pair-input";
     input.type = "text";
-    input.value = tokens[index] || "";
-    input.dataset.index = String(index);
+    input.value = tokens[tokenIndex] || "";
+    input.dataset.index = String(chineseIndex);
     input.autocomplete = "off";
     input.spellcheck = false;
 
     pair.append(charBox, input);
     fragment.append(pair);
+    tokenIndex += 1;
   });
 
   container.append(fragment);
 }
 
 function renderPinyinPairEditors() {
-  renderPinyinPairEditor(els.pinyinPairEditor, els.textInput.value, els.pinyinInput.value);
-  renderPinyinPairEditor(els.pinyinPairEditorPinyin, els.textInputPinyin.value, els.pinyinInputPinyin.value);
+  const page = pages[activePageIndex] || createPage();
+  renderPinyinPairEditor(els.pinyinPairEditor, els.textInput.value, els.pinyinInput.value, page.textInputQuestions);
+  renderPinyinPairEditor(
+    els.pinyinPairEditorPinyin,
+    els.textInputPinyin.value,
+    els.pinyinInputPinyin.value,
+    page.textInputPinyinQuestions
+  );
 }
 
 function syncPinyinInputFromPairEditor(container, pinyinInput, text) {
@@ -522,13 +628,13 @@ function render() {
     return cell;
   }
 
-  function renderTextSection(worksheet, label, text, pinyinText, visibility) {
+  function renderTextSection(worksheet, label, text, pinyinText, questionIndexes, visibility) {
     if (!text) {
       return 0;
     }
 
     appendSectionLabel(worksheet, label);
-    const chars = parseQuestionText(text);
+    const chars = parseQuestionText(text, questionIndexes);
     const list = convertPinyinList(mergedPinyinTokens(text, pinyinText), els.toneType.value);
     const items = buildItems(chars, list, els.toneType.value);
     let sectionUsed = 0;
@@ -624,6 +730,7 @@ function render() {
       answerMode ? "答案：看拼音写汉字" : "看拼音写汉字",
       pinyinToHanziText,
       pinyinToHanziPinyin,
+      page.textInputQuestions,
       answerMode
         ? { showPinyin: true, showHanzi: true, highlightHanzi: true }
         : { showPinyin: true, showHanzi: false }
@@ -633,6 +740,7 @@ function render() {
       answerMode ? "答案：看汉字写拼音" : "看汉字写拼音",
       hanziToPinyinText,
       hanziToPinyinPinyin,
+      page.textInputPinyinQuestions,
       answerMode
         ? { showPinyin: true, showHanzi: true, highlightPinyin: true }
         : { showPinyin: false, showHanzi: true }
@@ -709,12 +817,46 @@ function refreshPinyinBoxesFromText() {
 }));
 
 [
-  { text: els.textInput, py: els.pinyinInput },
-  { text: els.textInputPinyin, py: els.pinyinInputPinyin },
-].forEach(({ text, py }) => text.addEventListener("input", () => {
+  { editor: els.pinyinPairEditor, key: "textInputQuestions" },
+  { editor: els.pinyinPairEditorPinyin, key: "textInputPinyinQuestions" },
+].forEach(({ editor, key }) => editor.addEventListener("click", (event) => {
+  if (event.target === editor) {
+    editor.classList.toggle("is-expanded");
+    return;
+  }
+  if (!event.target.classList.contains("pinyin-pair-char")) {
+    return;
+  }
+  const page = pages[activePageIndex] || createPage();
+  const index = Number(event.target.dataset.index);
+  page[key] = toggleQuestionIndex(page[key], index);
+  renderPinyinPairEditors();
+  render();
+  saveState();
+}));
+
+document.addEventListener("click", (event) => {
+  [els.pinyinPairEditor, els.pinyinPairEditorPinyin].forEach((editor) => {
+    if (!editor.contains(event.target)) {
+      editor.classList.remove("is-expanded");
+    }
+  });
+});
+
+[
+  { text: els.textInput, py: els.pinyinInput, key: "textInputQuestions" },
+  { text: els.textInputPinyin, py: els.pinyinInputPinyin, key: "textInputPinyinQuestions" },
+].forEach(({ text, py, key }) => text.addEventListener("input", () => {
   const page = pages[activePageIndex] || createPage();
   const oldText = text === els.textInput ? page.textInput : page.textInputPinyin;
-  py.value = preservePinyinAfterTextEdit(oldText, text.value, py.value);
+  const rawText = text.value;
+  const hadMarkers = rawText.includes("[[") || rawText.includes("]]");
+  const normalized = normalizeQuestionField(rawText);
+  text.value = normalized.text;
+  py.value = preservePinyinAfterTextEdit(oldText, normalized.text, py.value);
+  page[key] = hadMarkers
+    ? normalized.questions
+    : preserveQuestionIndexesAfterTextEdit(oldText, normalized.text, page[key]);
   render();
   renderPinyinPairEditors();
   saveState();
@@ -800,7 +942,9 @@ els.importTextFile.addEventListener("change", async () => {
       page.textInput || "",
       page.textInputPinyin || "",
       page.pinyinInput || autoPinyinText(page.textInput || ""),
-      page.pinyinInputPinyin || autoPinyinText(page.textInputPinyin || "")
+      page.pinyinInputPinyin || autoPinyinText(page.textInputPinyin || ""),
+      page.textInputQuestions,
+      page.textInputPinyinQuestions
     ));
     if (importedPages.length === 0) {
       throw new Error("Empty export file");
@@ -818,9 +962,11 @@ els.importTextFile.addEventListener("change", async () => {
 });
 
 els.flipMarkersBtn.addEventListener("click", () => {
-  els.textInput.value = flipQuestionMarkers(els.textInput.value);
-  els.textInputPinyin.value = flipQuestionMarkers(els.textInputPinyin.value);
+  const page = pages[activePageIndex] || createPage();
+  page.textInputQuestions = invertQuestionIndexes(els.textInput.value, page.textInputQuestions);
+  page.textInputPinyinQuestions = invertQuestionIndexes(els.textInputPinyin.value, page.textInputPinyinQuestions);
   syncActivePageFromInputs();
+  renderPinyinPairEditors();
   render();
   saveState();
 });
