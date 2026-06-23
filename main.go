@@ -15,8 +15,8 @@ var assets embed.FS
 func main() {
 	err := wails.Run(&options.App{
 		Title:     "田字格拼音练习生成器",
-		Width:     1280,
-		Height:    900,
+		Width:     1620,
+		Height:    1022,
 		MinWidth:  960,
 		MinHeight: 720,
 		AssetServer: &assetserver.Options{
