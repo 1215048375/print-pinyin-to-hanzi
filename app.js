@@ -45,9 +45,15 @@ const els = {
   fillBlankPage: document.querySelector("#fillBlankPage"),
   useCompleteDict: document.querySelector("#useCompleteDict"),
   aiPinyinEnabled: document.querySelector("#aiPinyinEnabled"),
+  aiOptionsBtn: document.querySelector("#aiOptionsBtn"),
+  aiOptionsPanel: document.querySelector("#aiOptionsPanel"),
+  aiOptionsCloseBtn: document.querySelector("#aiOptionsCloseBtn"),
+  aiOptionsSaveBtn: document.querySelector("#aiOptionsSaveBtn"),
   aiApiUrl: document.querySelector("#aiApiUrl"),
   aiToken: document.querySelector("#aiToken"),
   aiModel: document.querySelector("#aiModel"),
+  aiDebugVisible: document.querySelector("#aiDebugVisible"),
+  aiDebugBox: document.querySelector("#aiDebugBox"),
   aiDebugRequest: document.querySelector("#aiDebugRequest"),
   aiDebugResponse: document.querySelector("#aiDebugResponse"),
   retryAiBtn: document.querySelector("#retryAiBtn"),
@@ -91,6 +97,7 @@ const savedFields = [
   "aiApiUrl",
   "aiToken",
   "aiModel",
+  "aiDebugVisible",
   "sheetTitle",
 ];
 
@@ -116,6 +123,14 @@ function prettyJson(value) {
 function setAiDebug(request, response = "") {
   els.aiDebugRequest.value = typeof request === "string" ? request : prettyJson(request);
   els.aiDebugResponse.value = typeof response === "string" ? response : prettyJson(response);
+}
+
+function setAiOptionsOpen(open) {
+  els.aiOptionsPanel.hidden = !open;
+}
+
+function updateAiDebugVisibility() {
+  els.aiDebugBox.hidden = !els.aiDebugVisible.checked;
 }
 
 function pinyinDictVersion() {
@@ -1023,7 +1038,7 @@ function renderPinyinPairEditor(container, text, pinyinText, questionIndexes = [
     input.autocomplete = "off";
     input.spellcheck = false;
 
-    pair.append(charBox, input);
+    pair.append(input, charBox);
     fragment.append(pair);
     tokenIndex += 1;
   });
@@ -1354,15 +1369,40 @@ els.useCompleteDict.addEventListener("input", () => {
   els.aiApiUrl,
   els.aiToken,
   els.aiModel,
+  els.aiDebugVisible,
 ].forEach((el) => el.addEventListener("input", () => {
   if (el === els.aiPinyinEnabled) {
     refreshPinyinBoxesFromText();
     renderPinyinPairEditors();
     render();
   }
+  if (el === els.aiDebugVisible) {
+    updateAiDebugVisibility();
+  }
   saveState();
   scheduleAiPinyinRefresh(0);
 }));
+
+els.aiOptionsBtn.addEventListener("click", () => {
+  setAiOptionsOpen(true);
+});
+
+els.aiOptionsCloseBtn.addEventListener("click", () => {
+  setAiOptionsOpen(false);
+});
+
+els.aiOptionsSaveBtn.addEventListener("click", () => {
+  updateAiDebugVisibility();
+  saveState();
+  setAiOptionsOpen(false);
+  setStatus("AI 选项已保存。", "success");
+});
+
+els.aiOptionsPanel.addEventListener("click", (event) => {
+  if (event.target === els.aiOptionsPanel) {
+    setAiOptionsOpen(false);
+  }
+});
 
 aiTargets().forEach((target) => {
   target.text.addEventListener("focus", () => {
@@ -1718,6 +1758,7 @@ async function initializeApp() {
   }
 
   restoreState();
+  updateAiDebugVisibility();
   render();
   if (startupDictError) {
     setStatus(startupDictError, "error");

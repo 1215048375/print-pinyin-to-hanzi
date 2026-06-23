@@ -19,6 +19,10 @@
           <p>输入文字后自动生成带声调拼音练习格。</p>
         </div>
         <div class="title-actions">
+          <button class="secondary-button compact-title-button" id="exportTextBtn" type="button">导出文字</button>
+          <button class="secondary-button compact-title-button" id="importTextBtn" type="button">导入文字</button>
+          <button class="secondary-button compact-title-button" id="exportUserDictBtn" type="button">导出用户辞典</button>
+          <button class="secondary-button compact-title-button" id="importUserDictBtn" type="button">导入用户辞典</button>
           <button class="secondary-button" id="exportPdfBtn" type="button">导出PDF</button>
           <button class="primary-button" id="printBtn" type="button">打印</button>
         </div>
@@ -26,28 +30,50 @@
 
       <p class="status" id="status"></p>
 
-      <div class="ai-settings">
-        <label class="ai-toggle"><input id="aiPinyinEnabled" type="checkbox"> AI 正音</label>
-        <label class="field compact">
-          <span>API URL</span>
-          <input id="aiApiUrl" type="url" value="https://aihubmix.com/v1" placeholder="https://api.openai.com/v1">
-        </label>
-        <label class="field compact">
-          <span>Token</span>
-          <input id="aiToken" type="password" autocomplete="off" placeholder="sk-...">
-        </label>
-        <label class="field compact">
-          <span>Model</span>
-          <input id="aiModel" type="text" value="gpt-4.1-mini" placeholder="gpt-4.1-mini">
-        </label>
+      <div class="top-toggles">
+        <label><input id="showPunctuation" type="checkbox" checked> 显示标点</label>
+        <label><input id="showGuides" type="checkbox" checked> 显示虚线</label>
+        <label><input id="includeAnswers" type="checkbox" checked> 生成答案页</label>
+        <label><input id="fillBlankPage" type="checkbox" checked> 空白页填满田字格</label>
+        <label><input id="useCompleteDict" type="checkbox"> 完整拼音词典</label>
       </div>
 
-      <details class="ai-debug">
-        <summary>AI Debug</summary>
-        <div class="ai-debug-actions">
-          <button class="secondary-button" id="retryAiBtn" type="button">重试当前AI</button>
-          <button class="secondary-button" id="clearAiCacheBtn" type="button">清空AI缓存</button>
+      <div class="ai-toolbar">
+        <label class="ai-toggle"><input id="aiPinyinEnabled" type="checkbox"> AI 正音</label>
+        <button class="secondary-button" id="aiOptionsBtn" type="button">AI选项</button>
+      </div>
+
+      <div class="ai-options-panel" id="aiOptionsPanel" hidden>
+        <div class="ai-options-card">
+          <div class="ai-options-header">
+            <strong>AI选项</strong>
+            <button class="secondary-button" id="aiOptionsCloseBtn" type="button">关闭</button>
+          </div>
+          <div class="ai-options-grid">
+            <label class="field compact">
+              <span>API URL</span>
+              <input id="aiApiUrl" type="url" value="https://aihubmix.com/v1" placeholder="https://api.openai.com/v1">
+            </label>
+            <label class="field compact">
+              <span>Token</span>
+              <input id="aiToken" type="password" autocomplete="off" placeholder="sk-...">
+            </label>
+            <label class="field compact">
+              <span>Model</span>
+              <input id="aiModel" type="text" value="gpt-4.1-mini" placeholder="gpt-4.1-mini">
+            </label>
+            <label class="ai-option-check"><input id="aiDebugVisible" type="checkbox"> 显示 AI Debug</label>
+          </div>
+          <div class="ai-debug-actions">
+            <button class="secondary-button" id="retryAiBtn" type="button">重试当前AI</button>
+            <button class="secondary-button" id="clearAiCacheBtn" type="button">清空AI缓存</button>
+            <button class="primary-button" id="aiOptionsSaveBtn" type="button">保存</button>
+          </div>
         </div>
+      </div>
+
+      <details class="ai-debug" id="aiDebugBox" hidden>
+        <summary>AI Debug</summary>
         <div class="ai-debug-grid">
           <label>
             <span>发送</span>
@@ -66,10 +92,6 @@
         <button id="nextPageBtn" type="button">下一页</button>
         <button id="newPageBtn" type="button">新建空白页</button>
         <button id="deletePageBtn" type="button">删除当前页</button>
-        <button id="exportTextBtn" type="button">导出文字</button>
-        <button id="importTextBtn" type="button">导入文字</button>
-        <button id="exportUserDictBtn" type="button">导出用户辞典</button>
-        <button id="importUserDictBtn" type="button">导入用户辞典</button>
         <button id="flipMarkersBtn" type="button">翻转辅助/问题标记</button>
         <button id="resetBtn" type="button">重置为空白页</button>
         <input id="importTextFile" type="file" accept="application/json,.json" hidden>
@@ -156,14 +178,6 @@
             <option value="after-all">全部题目后面</option>
           </select>
         </label>
-      </div>
-
-      <div class="toggle-row">
-        <label><input id="showPunctuation" type="checkbox" checked> 显示标点</label>
-        <label><input id="showGuides" type="checkbox" checked> 显示虚线</label>
-        <label><input id="includeAnswers" type="checkbox" checked> 生成答案页</label>
-        <label><input id="fillBlankPage" type="checkbox" checked> 空白页填满田字格</label>
-        <label><input id="useCompleteDict" type="checkbox"> 完整拼音词典</label>
       </div>
 
       <label class="field">
