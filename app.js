@@ -17,6 +17,8 @@ const AI_PINYIN_CACHE_KEY = "pinyin-tianzige-ai-pinyin-cache-v1";
 const AI_PINYIN_CACHE_VERSION = "ai-pinyin-cache-v1";
 const AI_PINYIN_CACHE_MAX_ENTRIES = 500;
 const AI_PINYIN_PROMPT_VERSION = "context-pinyin-json-v1";
+const USER_PINYIN_DICT_KEY = "pinyin-tianzige-user-pinyin-dict-v1";
+const USER_PINYIN_DICT_VERSION = 1;
 
 const els = {
   root: document.documentElement,
@@ -61,6 +63,9 @@ const els = {
   exportTextBtn: document.querySelector("#exportTextBtn"),
   importTextBtn: document.querySelector("#importTextBtn"),
   importTextFile: document.querySelector("#importTextFile"),
+  exportUserDictBtn: document.querySelector("#exportUserDictBtn"),
+  importUserDictBtn: document.querySelector("#importUserDictBtn"),
+  importUserDictFile: document.querySelector("#importUserDictFile"),
   flipMarkersBtn: document.querySelector("#flipMarkersBtn"),
   resetBtn: document.querySelector("#resetBtn"),
   pageIndicator: document.querySelector("#pageIndicator"),
@@ -96,6 +101,7 @@ const aiPinyinRequestIds = new WeakMap();
 const pinyinManualVersions = new WeakMap();
 let aiPinyinDebounceTimer = 0;
 let aiPinyinCache = loadAiPinyinCache();
+let userPinyinDict = loadUserPinyinDict();
 let activeAiTextTarget = null;
 
 function setStatus(message, kind = "info") {
@@ -183,6 +189,111 @@ function saveAiPinyinCache() {
 function clearAiPinyinCache() {
   aiPinyinCache = { version: AI_PINYIN_CACHE_VERSION, entries: {} };
   localStorage.removeItem(AI_PINYIN_CACHE_KEY);
+}
+
+function loadUserPinyinDict() {
+  try {
+    const dict = JSON.parse(localStorage.getItem(USER_PINYIN_DICT_KEY) || "{}");
+    if (dict.version === USER_PINYIN_DICT_VERSION && dict.entries && typeof dict.entries === "object") {
+      return dict;
+    }
+  } catch {
+    // Ignore malformed user dictionaries and start fresh.
+  }
+  return { version: USER_PINYIN_DICT_VERSION, entries: {} };
+}
+
+function saveUserPinyinDict() {
+  localStorage.setItem(USER_PINYIN_DICT_KEY, JSON.stringify(userPinyinDict));
+}
+
+function chineseWordSegments(text) {
+  const segments = [];
+  let raw = "";
+  let chinese = "";
+  let chineseStart = 0;
+  let chineseCount = 0;
+  let chineseSeen = 0;
+
+  function pushSegment() {
+    if (chineseCount > 0) {
+      segments.push({
+        raw,
+        key: chinese,
+        chineseStart,
+        chineseCount,
+      });
+    }
+    raw = "";
+    chinese = "";
+    chineseCount = 0;
+  }
+
+  for (const char of text) {
+    if (isSpace(char)) {
+      pushSegment();
+      continue;
+    }
+    raw += char;
+    if (isChinese(char)) {
+      if (chineseCount === 0) {
+        chineseStart = chineseSeen;
+      }
+      chinese += char;
+      chineseCount += 1;
+      chineseSeen += 1;
+    }
+  }
+  pushSegment();
+  return segments;
+}
+
+function userDictTokensForText(text) {
+  const tokens = Array(chineseCharsFromText(text).length).fill("");
+  for (const segment of chineseWordSegments(text)) {
+    const entry = userPinyinDict.entries[segment.key];
+    if (!entry || !Array.isArray(entry.tokens) || entry.tokens.length !== segment.chineseCount) {
+      continue;
+    }
+    entry.tokens.forEach((token, offset) => {
+      tokens[segment.chineseStart + offset] = token;
+    });
+  }
+  return tokens;
+}
+
+function applyUserDictTokens(text, tokens) {
+  const output = [...tokens];
+  const dictTokens = userDictTokensForText(text);
+  dictTokens.forEach((token, index) => {
+    if (token) {
+      output[index] = token;
+    }
+  });
+  return output;
+}
+
+function saveUserDictForChineseIndex(text, pinyinText, chineseIndex) {
+  const segment = chineseWordSegments(text).find((item) => (
+    chineseIndex >= item.chineseStart &&
+    chineseIndex < item.chineseStart + item.chineseCount
+  ));
+  if (!segment || segment.chineseCount < 1) {
+    return false;
+  }
+
+  const tokens = pinyinTokens(pinyinText).slice(segment.chineseStart, segment.chineseStart + segment.chineseCount);
+  if (tokens.length !== segment.chineseCount || tokens.some((token) => !token)) {
+    return false;
+  }
+
+  userPinyinDict.entries[segment.key] = {
+    word: segment.key,
+    tokens,
+    updatedAt: new Date().toISOString(),
+  };
+  saveUserPinyinDict();
+  return true;
 }
 
 function aiTargets() {
@@ -420,16 +531,16 @@ function pinyinDe(toneType = els.toneType.value) {
 
 function autoPinyinText(text) {
   if (!shouldUsePinyinPro()) {
-    return "";
+    return userDictTokensForText(text).join(" ");
   }
   const chars = parseQuestionText(text);
   const cleanText = chars.map(({ char }) => char).join("");
   const list = getPinyinList(cleanText, "num");
   const items = buildItems(chars, list, "num");
-  return items
+  const tokens = items
     .filter((item) => isChinese(item.char))
-    .map((item) => item.py)
-    .join(" ");
+    .map((item) => item.py);
+  return applyUserDictTokens(cleanText, tokens).join(" ");
 }
 
 function pinyinTokens(text) {
@@ -679,7 +790,7 @@ async function updatePinyinWithAi(textEl, pyEl, label, options = {}) {
       return;
     }
     const { tokens, cached } = result;
-    pyEl.value = tokens.join(" ");
+    pyEl.value = applyUserDictTokens(text, tokens).join(" ");
     render();
     renderPinyinPairEditors();
     saveState();
@@ -762,9 +873,10 @@ function convertPinyinList(tokens, toneType = els.toneType.value) {
 
 function mergedPinyinTokens(text, pinyinText) {
   const manual = pinyinTokens(pinyinText);
+  const userDict = userDictTokensForText(text);
   const automatic = pinyinTokens(autoPinyinText(text));
-  const length = Math.max(manual.length, automatic.length);
-  return Array.from({ length }, (_, index) => manual[index] || automatic[index] || "");
+  const length = Math.max(chineseCharsFromText(text).length, manual.length, userDict.length, automatic.length);
+  return Array.from({ length }, (_, index) => manual[index] || userDict[index] || automatic[index] || "");
 }
 
 function chineseCharsFromText(text) {
@@ -858,8 +970,9 @@ function invertQuestionIndexes(text, questionIndexes = []) {
 function pinyinTokensForEditor(text, pinyinText) {
   const chars = chineseCharsFromText(text);
   const manual = pinyinTokens(pinyinText);
+  const userDict = userDictTokensForText(text);
   const automatic = pinyinTokens(autoPinyinText(text));
-  return chars.map((_, index) => manual[index] || automatic[index] || "");
+  return chars.map((_, index) => manual[index] || userDict[index] || automatic[index] || "");
 }
 
 function renderPinyinPairEditor(container, text, pinyinText, questionIndexes = []) {
@@ -1087,6 +1200,9 @@ function render() {
       if (item.punctuation && !item.space && !els.showPunctuation.checked) {
         continue;
       }
+      if (item.space && gridIndex % columns === 0) {
+        continue;
+      }
 
       appendCell(item);
       sectionUsed += isChinese(item.char) ? 1 : 0;
@@ -1284,6 +1400,10 @@ els.clearAiCacheBtn.addEventListener("click", () => {
   event.target.value = event.target.value.replace(/\s+/g, "");
   syncPinyinInputFromPairEditor(editor, py, text.value);
   markManualPinyinEdit(py);
+  const chineseIndex = Number(event.target.dataset.index);
+  if (Number.isInteger(chineseIndex) && saveUserDictForChineseIndex(text.value, py.value, chineseIndex)) {
+    setStatus("已保存到用户拼音辞典。", "success");
+  }
   render();
   saveState();
 }));
@@ -1431,6 +1551,69 @@ els.importTextFile.addEventListener("change", async () => {
     setStatus(`已导入 ${pages.length} 页文字。`, "success");
   } catch {
     setStatus("导入失败，请选择本工具导出的 JSON 文件。", "error");
+  }
+});
+
+els.exportUserDictBtn.addEventListener("click", () => {
+  const payload = {
+    type: "pinyin-tianzige-user-dict",
+    version: USER_PINYIN_DICT_VERSION,
+    exportedAt: new Date().toISOString(),
+    entries: userPinyinDict.entries,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const date = new Date().toISOString().slice(0, 10);
+  link.href = url;
+  link.download = `pinyin-user-dict-${date}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  setStatus(`已导出用户辞典 ${Object.keys(userPinyinDict.entries).length} 条。`, "success");
+});
+
+els.importUserDictBtn.addEventListener("click", () => {
+  els.importUserDictFile.click();
+});
+
+els.importUserDictFile.addEventListener("change", async () => {
+  const file = els.importUserDictFile.files?.[0];
+  els.importUserDictFile.value = "";
+  if (!file) {
+    return;
+  }
+
+  try {
+    const payload = JSON.parse(await file.text());
+    if (payload?.type !== "pinyin-tianzige-user-dict" || !payload.entries || typeof payload.entries !== "object") {
+      throw new Error("Invalid user dictionary");
+    }
+
+    let imported = 0;
+    for (const [word, entry] of Object.entries(payload.entries)) {
+      const key = String(entry?.word || word || "").trim();
+      const tokens = Array.isArray(entry?.tokens) ? entry.tokens.map(normalizeAiPinyinToken).filter(Boolean) : [];
+      if (!key || chineseCharsFromText(key).length !== tokens.length) {
+        continue;
+      }
+      userPinyinDict.entries[key] = {
+        word: key,
+        tokens,
+        updatedAt: entry?.updatedAt || new Date().toISOString(),
+      };
+      imported += 1;
+    }
+
+    saveUserPinyinDict();
+    refreshPinyinBoxesFromText();
+    render();
+    renderPinyinPairEditors();
+    saveState();
+    setStatus(`已导入用户辞典 ${imported} 条。`, "success");
+  } catch {
+    setStatus("用户辞典导入失败，请选择本工具导出的 JSON 文件。", "error");
   }
 });
 
