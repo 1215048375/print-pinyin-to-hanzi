@@ -1033,6 +1033,8 @@ function renderPinyinPairEditor(container, text, pinyinText, questionIndexes = [
 
 function renderPinyinPairEditors() {
   const page = pages[activePageIndex] || createPage();
+  const pinyinExpanded = els.pinyinPairEditor.classList.contains("is-expanded");
+  const pinyinPinyinExpanded = els.pinyinPairEditorPinyin.classList.contains("is-expanded");
   renderPinyinPairEditor(els.pinyinPairEditor, els.textInput.value, els.pinyinInput.value, page.textInputQuestions);
   renderPinyinPairEditor(
     els.pinyinPairEditorPinyin,
@@ -1040,6 +1042,8 @@ function renderPinyinPairEditors() {
     els.pinyinInputPinyin.value,
     page.textInputPinyinQuestions
   );
+  els.pinyinPairEditor.classList.toggle("is-expanded", pinyinExpanded);
+  els.pinyinPairEditorPinyin.classList.toggle("is-expanded", pinyinPinyinExpanded);
 }
 
 function syncPinyinInputFromPairEditor(container, pinyinInput, text) {
