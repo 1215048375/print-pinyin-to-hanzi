@@ -93,6 +93,7 @@ let isRestoring = false;
 let pages = [];
 let activePageIndex = 0;
 const aiPinyinRequestIds = new WeakMap();
+const pinyinManualVersions = new WeakMap();
 let aiPinyinDebounceTimer = 0;
 let aiPinyinCache = loadAiPinyinCache();
 let activeAiTextTarget = null;
@@ -194,6 +195,18 @@ function aiTargets() {
 function currentAiTarget() {
   const focused = aiTargets().find(({ text }) => text === document.activeElement);
   return focused || activeAiTextTarget || aiTargets()[0];
+}
+
+function markManualPinyinEdit(pyEl) {
+  pinyinManualVersions.set(pyEl, (pinyinManualVersions.get(pyEl) || 0) + 1);
+}
+
+function hasCompletePinyin(text, pinyinText) {
+  const chineseCount = chineseCharsFromText(text).length;
+  if (chineseCount === 0) {
+    return false;
+  }
+  return pinyinTokens(pinyinText).length >= chineseCount;
 }
 
 function createPage(
@@ -633,21 +646,36 @@ async function fetchAiPinyinTokens(text, label, options = {}) {
 }
 
 async function updatePinyinWithAi(textEl, pyEl, label, options = {}) {
+  const { force = false } = options;
   if (!canUseAiPinyin()) {
-    if (options.force) {
+    if (force) {
       setStatus("请先打开 AI 正音，并填写 API URL、Token 和 Model。", "error");
     }
+    return;
+  }
+
+  if (!force && hasCompletePinyin(textEl.value, pyEl.value)) {
+    setStatus(`已保留手动拼音：${label}。需要覆盖时请点“重试当前AI”。`, "success");
     return;
   }
 
   const requestId = (aiPinyinRequestIds.get(textEl) || 0) + 1;
   aiPinyinRequestIds.set(textEl, requestId);
   const text = textEl.value;
+  const pinyinBeforeRequest = pyEl.value;
+  const manualVersionBeforeRequest = pinyinManualVersions.get(pyEl) || 0;
   setStatus(`AI 正在生成拼音：${label}...`, "pending");
 
   try {
     const result = await fetchAiPinyinTokens(text, label, options);
     if (requestId !== aiPinyinRequestIds.get(textEl) || textEl.value !== text) {
+      return;
+    }
+    if (!force && (
+      pyEl.value !== pinyinBeforeRequest ||
+      (pinyinManualVersions.get(pyEl) || 0) !== manualVersionBeforeRequest
+    )) {
+      setStatus(`AI 结果已跳过：${label} 的拼音已被手动修改。`, "success");
       return;
     }
     const { tokens, cached } = result;
@@ -1240,6 +1268,7 @@ els.clearAiCacheBtn.addEventListener("click", () => {
 });
 
 [els.pinyinInput, els.pinyinInputPinyin].forEach((el) => el.addEventListener("input", () => {
+  markManualPinyinEdit(el);
   render();
   renderPinyinPairEditors();
   saveState();
@@ -1254,6 +1283,7 @@ els.clearAiCacheBtn.addEventListener("click", () => {
   }
   event.target.value = event.target.value.replace(/\s+/g, "");
   syncPinyinInputFromPairEditor(editor, py, text.value);
+  markManualPinyinEdit(py);
   render();
   saveState();
 }));
