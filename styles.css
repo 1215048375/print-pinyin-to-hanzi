@@ -483,10 +483,110 @@ input[type="color"] {
   width: auto;
 }
 
-.status {
-  min-height: 22px;
-  color: #0f766e;
+.ai-settings {
+  display: grid;
+  grid-template-columns: 110px repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin: 6px 0 16px;
+  padding: 10px;
+  border: 1px solid #d7dee8;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.ai-toggle {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ai-toggle input {
+  width: auto;
+}
+
+.ai-debug {
+  margin: -6px 0 14px;
+  border: 1px solid #d7dee8;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.ai-debug summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  color: #334155;
   font-size: 13px;
+  font-weight: 700;
+  user-select: none;
+}
+
+.ai-debug-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 10px 10px;
+}
+
+.ai-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 10px 10px;
+}
+
+.ai-debug-grid label {
+  display: grid;
+  gap: 4px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ai-debug textarea {
+  min-height: 120px;
+  resize: vertical;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: pre;
+}
+
+.status {
+  min-height: 34px;
+  margin: -4px 0 14px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.status:empty {
+  display: none;
+}
+
+.status[data-kind="pending"] {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+  color: #075985;
+}
+
+.status[data-kind="success"] {
+  border-color: #99f6e4;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.status[data-kind="error"] {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #b91c1c;
 }
 
 .pdf-rendering .paper {
@@ -526,6 +626,14 @@ input[type="color"] {
   }
 
   .editor-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-settings {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-debug-grid {
     grid-template-columns: 1fr;
   }
 }

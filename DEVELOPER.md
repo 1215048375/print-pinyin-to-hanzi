@@ -13,7 +13,7 @@
 拼音转换依赖放在本地：
 
 - `libs/pinyin-pro.js`：`pinyin-pro@3.28.1` 浏览器脚本，用于汉字转拼音。
-- `libs/pinyin-pro-complete-dict.js`：`@pinyin-pro/data@1.3.1` 的完整词典浏览器包装，用于提高多音字和词语识别准确率。
+- `libs/pinyin-pro-complete-dict.js`：`@pinyin-pro/data@1.3.1` 的完整词典浏览器包装。默认不加载；用户打开“完整拼音词典”开关后才按需加载，用于提高本地多音字和词语识别准确率。
 
 PDF 导出依赖也放在本地：
 
@@ -66,15 +66,26 @@ pinyin-tianzige-settings-v1
 
 设置项如颜色、格子大小、拼音格式、答案页位置等也一起保存在同一个状态对象中。
 
+AI 正音配置也保存在 `localStorage` 中：
+
+- `aiPinyinEnabled`
+- `aiApiUrl`
+- `aiToken`
+- `aiModel`
+
+这些配置不会进入“导出文字”的 JSON 文件。
+
 ## 关键流程
 
 ### 文字到拼音
 
-页面加载时会先注册完整词典：
+页面默认只使用 `pinyin-pro` 自带词典。用户打开“完整拼音词典”开关后，`loadCompletePinyinDict()` 会动态加载 `libs/pinyin-pro-complete-dict.js`，再调用：
 
 ```js
 addPinyinDict(window.PinyinProCompleteDict, "complete");
 ```
+
+`pinyin-pro` 没有卸载已注册词典的接口，所以关闭该开关时会保存设置并刷新页面，恢复到只加载默认词典的状态。
 
 少量完整词典仍无法判断的短语，可通过 `customPinyin` 加自定义覆盖。例如当前对 `开心地` 注册为 `kāi xīn de`，用于处理结构助词“地”的轻声读音。
 
@@ -89,6 +100,26 @@ addPinyinDict(window.PinyinProCompleteDict, "complete");
 3. 对齐成功的汉字保留旧拼音，新插入的汉字使用自动拼音。
 
 题目选中状态也使用同样思路，由 `preserveQuestionIndexesAfterTextEdit()` 跟随文本编辑迁移。
+
+### AI 正音
+
+开启 `aiPinyinEnabled` 且 API URL、Token、Model 都已填写时，文本输入会触发 `scheduleAiPinyinRefresh()`。
+
+请求发送到：
+
+```text
+{aiApiUrl}/chat/completions
+```
+
+请求体使用 OpenAI 兼容的 chat completions 格式。系统提示要求模型只返回 JSON 字符串数组，例如：
+
+```json
+["kai1", "xin1", "de5", "pa2", "xing2"]
+```
+
+返回数组长度必须等于输入文本中的汉字数量。标点、空格和换行不会计入数量。校验失败或网络失败时保留本地拼音结果。
+
+AI 正音是异步更新隐藏的 `pinyinInput` / `pinyinInputPinyin`，再刷新小格区和预览。每个文本框有独立请求版本号，避免较旧请求覆盖较新内容。
 
 ### 逐字小格编辑区
 

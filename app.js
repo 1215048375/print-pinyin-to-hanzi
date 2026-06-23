@@ -1,12 +1,10 @@
 const pinyin = window.pinyinPro?.pinyin;
 const addPinyinDict = window.pinyinPro?.addDict;
 const customPinyin = window.pinyinPro?.customPinyin;
-const completePinyinDictLoaded = Boolean(addPinyinDict && window.PinyinProCompleteDict);
-const PINYIN_DICT_VERSION = "pinyin-pro-3.28.1-complete-1.3.1-custom-de-1";
-
-if (completePinyinDictLoaded) {
-  addPinyinDict(window.PinyinProCompleteDict, "complete");
-}
+const PINYIN_DICT_VERSION_BASE = "pinyin-pro-3.28.1";
+const COMPLETE_PINYIN_DICT_SRC = "./libs/pinyin-pro-complete-dict.js";
+let completePinyinDictAdded = false;
+let completePinyinDictLoadPromise = null;
 
 if (customPinyin) {
   customPinyin({
@@ -15,6 +13,10 @@ if (customPinyin) {
 }
 
 const STORAGE_KEY = "pinyin-tianzige-settings-v1";
+const AI_PINYIN_CACHE_KEY = "pinyin-tianzige-ai-pinyin-cache-v1";
+const AI_PINYIN_CACHE_VERSION = "ai-pinyin-cache-v1";
+const AI_PINYIN_CACHE_MAX_ENTRIES = 500;
+const AI_PINYIN_PROMPT_VERSION = "context-pinyin-json-v1";
 
 const els = {
   root: document.documentElement,
@@ -39,6 +41,14 @@ const els = {
   showGuides: document.querySelector("#showGuides"),
   includeAnswers: document.querySelector("#includeAnswers"),
   fillBlankPage: document.querySelector("#fillBlankPage"),
+  useCompleteDict: document.querySelector("#useCompleteDict"),
+  aiPinyinEnabled: document.querySelector("#aiPinyinEnabled"),
+  aiApiUrl: document.querySelector("#aiApiUrl"),
+  aiToken: document.querySelector("#aiToken"),
+  aiModel: document.querySelector("#aiModel"),
+  aiDebugRequest: document.querySelector("#aiDebugRequest"),
+  aiDebugResponse: document.querySelector("#aiDebugResponse"),
+  clearAiCacheBtn: document.querySelector("#clearAiCacheBtn"),
   sheetTitle: document.querySelector("#sheetTitle"),
   status: document.querySelector("#status"),
   printBtn: document.querySelector("#printBtn"),
@@ -70,12 +80,107 @@ const savedFields = [
   "showGuides",
   "includeAnswers",
   "fillBlankPage",
+  "useCompleteDict",
+  "aiPinyinEnabled",
+  "aiApiUrl",
+  "aiToken",
+  "aiModel",
   "sheetTitle",
 ];
 
 let isRestoring = false;
 let pages = [];
 let activePageIndex = 0;
+const aiPinyinRequestIds = new WeakMap();
+let aiPinyinDebounceTimer = 0;
+let aiPinyinCache = loadAiPinyinCache();
+
+function setStatus(message, kind = "info") {
+  els.status.textContent = message;
+  els.status.dataset.kind = kind;
+}
+
+function prettyJson(value) {
+  return JSON.stringify(value, null, 2);
+}
+
+function setAiDebug(request, response = "") {
+  els.aiDebugRequest.value = typeof request === "string" ? request : prettyJson(request);
+  els.aiDebugResponse.value = typeof response === "string" ? response : prettyJson(response);
+}
+
+function pinyinDictVersion() {
+  return `${PINYIN_DICT_VERSION_BASE}-${els.aiPinyinEnabled.checked ? "ai" : "local"}-${els.useCompleteDict.checked ? "complete" : "default"}-custom-de-1`;
+}
+
+function registerCompletePinyinDict() {
+  if (completePinyinDictAdded) {
+    return;
+  }
+  if (!addPinyinDict || !window.PinyinProCompleteDict) {
+    throw new Error("完整拼音词典未加载。");
+  }
+  addPinyinDict(window.PinyinProCompleteDict, "complete");
+  completePinyinDictAdded = true;
+}
+
+function loadCompletePinyinDict() {
+  if (!els.useCompleteDict.checked) {
+    return Promise.resolve(false);
+  }
+  if (completePinyinDictAdded) {
+    return Promise.resolve(true);
+  }
+  if (window.PinyinProCompleteDict) {
+    registerCompletePinyinDict();
+    return Promise.resolve(true);
+  }
+  if (!completePinyinDictLoadPromise) {
+    completePinyinDictLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = COMPLETE_PINYIN_DICT_SRC;
+      script.onload = () => {
+        try {
+          registerCompletePinyinDict();
+          resolve(true);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      script.onerror = () => reject(new Error("完整拼音词典加载失败。"));
+      document.head.appendChild(script);
+    });
+  }
+  return completePinyinDictLoadPromise;
+}
+
+function loadAiPinyinCache() {
+  try {
+    const cache = JSON.parse(localStorage.getItem(AI_PINYIN_CACHE_KEY) || "{}");
+    if (cache.version === AI_PINYIN_CACHE_VERSION && cache.entries && typeof cache.entries === "object") {
+      return cache;
+    }
+  } catch {
+    // Ignore malformed cache and start fresh.
+  }
+  return { version: AI_PINYIN_CACHE_VERSION, entries: {} };
+}
+
+function saveAiPinyinCache() {
+  const entries = Object.entries(aiPinyinCache.entries);
+  if (entries.length > AI_PINYIN_CACHE_MAX_ENTRIES) {
+    entries
+      .sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0))
+      .slice(AI_PINYIN_CACHE_MAX_ENTRIES)
+      .forEach(([key]) => delete aiPinyinCache.entries[key]);
+  }
+  localStorage.setItem(AI_PINYIN_CACHE_KEY, JSON.stringify(aiPinyinCache));
+}
+
+function clearAiPinyinCache() {
+  aiPinyinCache = { version: AI_PINYIN_CACHE_VERSION, entries: {} };
+  localStorage.removeItem(AI_PINYIN_CACHE_KEY);
+}
 
 function createPage(
   textInput = "",
@@ -114,7 +219,7 @@ function saveState() {
   const state = {
     pages,
     activePageIndex,
-    pinyinDictVersion: PINYIN_DICT_VERSION,
+    pinyinDictVersion: pinyinDictVersion(),
   };
   for (const key of savedFields) {
     const el = els[key];
@@ -128,7 +233,7 @@ function restoreState() {
   isRestoring = true;
 
   if (Array.isArray(state.pages) && state.pages.length > 0) {
-    const shouldRefreshPinyinCache = state.pinyinDictVersion !== PINYIN_DICT_VERSION;
+    const shouldRefreshPinyinCache = state.pinyinDictVersion !== pinyinDictVersion();
     pages = state.pages.map((page) => createPage(
       page.textInput || "",
       page.textInputPinyin || "",
@@ -195,7 +300,7 @@ const isSpace = (char) => char === " " || char === "\t";
 const commonVerbChars = new Set("走跑跳爬看说讲读写听唱笑哭吃喝拿放坐站来去回进出做");
 
 function getPinyinList(text, toneType = els.toneType.value) {
-  if (!pinyin) {
+  if (!pinyin || !shouldUsePinyinPro()) {
     return [];
   }
 
@@ -287,6 +392,9 @@ function pinyinDe(toneType = els.toneType.value) {
 }
 
 function autoPinyinText(text) {
+  if (!shouldUsePinyinPro()) {
+    return "";
+  }
   const chars = parseQuestionText(text);
   const cleanText = chars.map(({ char }) => char).join("");
   const list = getPinyinList(cleanText, "num");
@@ -299,6 +407,251 @@ function autoPinyinText(text) {
 
 function pinyinTokens(text) {
   return text.trim().split(/\s+/).filter(Boolean);
+}
+
+function aiConfig() {
+  return {
+    enabled: els.aiPinyinEnabled.checked,
+    apiUrl: els.aiApiUrl.value.trim().replace(/\/+$/, ""),
+    token: els.aiToken.value.trim(),
+    model: els.aiModel.value.trim(),
+  };
+}
+
+function canUseAiPinyin() {
+  const config = aiConfig();
+  return Boolean(config.enabled && config.apiUrl && config.token && config.model);
+}
+
+function shouldUsePinyinPro() {
+  return !els.aiPinyinEnabled.checked;
+}
+
+function extractJsonArray(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(match[0]);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function normalizeAiPinyinToken(token) {
+  return String(token || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/ü/g, "v")
+    .replace(/u:/g, "v");
+}
+
+function splitChineseSegments(text) {
+  const segments = [];
+  let current = "";
+  for (const char of text) {
+    if (isChinese(char)) {
+      current += char;
+    } else if (current) {
+      segments.push(current);
+      current = "";
+    }
+  }
+  if (current) {
+    segments.push(current);
+  }
+  return segments;
+}
+
+function aiPinyinCacheKey(config, segment) {
+  return [
+    AI_PINYIN_PROMPT_VERSION,
+    config.apiUrl,
+    config.model,
+    segment,
+  ].join("\u001f");
+}
+
+function readAiPinyinCache(text, config) {
+  const segments = splitChineseSegments(text);
+  if (!segments.length || segments.some((segment) => segment.length < 2)) {
+    return null;
+  }
+
+  const tokens = [];
+  for (const segment of segments) {
+    const entry = aiPinyinCache.entries[aiPinyinCacheKey(config, segment)];
+    if (!entry || !Array.isArray(entry.tokens) || entry.tokens.length !== segment.length) {
+      return null;
+    }
+    entry.updatedAt = Date.now();
+    tokens.push(...entry.tokens);
+  }
+  saveAiPinyinCache();
+  return tokens;
+}
+
+function writeAiPinyinCache(text, tokens, config) {
+  const segments = splitChineseSegments(text);
+  let tokenIndex = 0;
+  let changed = false;
+
+  for (const segment of segments) {
+    const segmentTokens = tokens.slice(tokenIndex, tokenIndex + segment.length);
+    tokenIndex += segment.length;
+    if (segment.length < 2 || segmentTokens.length !== segment.length || segmentTokens.some((token) => !token)) {
+      continue;
+    }
+    aiPinyinCache.entries[aiPinyinCacheKey(config, segment)] = {
+      tokens: segmentTokens,
+      updatedAt: Date.now(),
+    };
+    changed = true;
+  }
+
+  if (changed) {
+    saveAiPinyinCache();
+  }
+}
+
+async function fetchAiPinyinTokens(text, label) {
+  const config = aiConfig();
+  const chars = chineseCharsFromText(text);
+  if (chars.length === 0) {
+    return { tokens: [], cached: false };
+  }
+
+  const cachedTokens = readAiPinyinCache(text, config);
+  if (cachedTokens) {
+    setAiDebug(
+      {
+        source: "cache",
+        apiUrl: config.apiUrl,
+        model: config.model,
+        label,
+        text,
+      },
+      {
+        cached: true,
+        tokens: cachedTokens,
+      }
+    );
+    return { tokens: cachedTokens, cached: true };
+  }
+
+  const requestBody = {
+    model: config.model,
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "你是汉语拼音正音助手。",
+          "请按上下文判断多音字和轻声。",
+          "只返回 JSON 字符串数组，不要解释。",
+          "数组长度必须等于输入文本中的汉字数量，忽略标点、空格和换行。",
+          "每个元素使用数字声调拼音，例如 zhong1、qing4、de5。轻声必须用 5。",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: `任务：${label}\n文本：${text}\n汉字序列：${chars.join("")}`,
+      },
+    ],
+  };
+  setAiDebug({
+    url: `${config.apiUrl}/chat/completions`,
+    method: "POST",
+    body: requestBody,
+  }, "等待响应...");
+
+  const response = await fetch(`${config.apiUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.token}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  const responseText = await response.text();
+  let payload = null;
+  try {
+    payload = JSON.parse(responseText);
+  } catch {
+    payload = null;
+  }
+  setAiDebug({
+    url: `${config.apiUrl}/chat/completions`,
+    method: "POST",
+    body: requestBody,
+  }, {
+    status: response.status,
+    ok: response.ok,
+    body: payload || responseText,
+  });
+
+  if (!response.ok) {
+    throw new Error(`AI 请求失败：${response.status}`);
+  }
+
+  if (!payload) {
+    throw new Error("AI 返回内容不是 JSON。");
+  }
+  const content = payload?.choices?.[0]?.message?.content || "";
+  const tokens = extractJsonArray(content)?.map(normalizeAiPinyinToken);
+  if (!tokens || tokens.length !== chars.length || tokens.some((token) => !token)) {
+    throw new Error("AI 返回的拼音数量和汉字数量不一致");
+  }
+  writeAiPinyinCache(text, tokens, config);
+  return { tokens, cached: false };
+}
+
+async function updatePinyinWithAi(textEl, pyEl, label) {
+  if (!canUseAiPinyin()) {
+    return;
+  }
+
+  const requestId = (aiPinyinRequestIds.get(textEl) || 0) + 1;
+  aiPinyinRequestIds.set(textEl, requestId);
+  const text = textEl.value;
+  setStatus(`AI 正在生成拼音：${label}...`, "pending");
+
+  try {
+    const result = await fetchAiPinyinTokens(text, label);
+    if (requestId !== aiPinyinRequestIds.get(textEl) || textEl.value !== text) {
+      return;
+    }
+    const { tokens, cached } = result;
+    pyEl.value = tokens.join(" ");
+    render();
+    renderPinyinPairEditors();
+    saveState();
+    setStatus(`${cached ? "AI 已从缓存更新拼音" : "AI 已更新拼音"}：${label}`, "success");
+  } catch (error) {
+    if (requestId === aiPinyinRequestIds.get(textEl)) {
+      setStatus(error.message || "AI 正音失败，已保留本地拼音。", "error");
+    }
+  }
+}
+
+function scheduleAiPinyinRefresh(delay = 500) {
+  clearTimeout(aiPinyinDebounceTimer);
+  if (!canUseAiPinyin()) {
+    return;
+  }
+  aiPinyinDebounceTimer = window.setTimeout(() => {
+    updatePinyinWithAi(els.textInput, els.pinyinInput, "看拼音写汉字");
+    updatePinyinWithAi(els.textInputPinyin, els.pinyinInputPinyin, "看汉字写拼音");
+  }, delay);
 }
 
 function stripToneMarks(value) {
@@ -783,9 +1136,12 @@ function render() {
     });
   }
 
-  els.status.textContent = pinyin
-    ? `已生成 ${pages.length} 个编辑页，${used} 个汉字格${els.includeAnswers.checked ? "，含答案页" : ""}。`
-    : "拼音库未加载，请联网后刷新，或改为本地离线库。";
+  setStatus(
+    pinyin
+      ? `已生成 ${pages.length} 个编辑页，${used} 个汉字格${els.includeAnswers.checked ? "，含答案页" : ""}。`
+      : "拼音库未加载，请联网后刷新，或改为本地离线库。",
+    pinyin ? "success" : "error"
+  );
 }
 
 function refreshPinyinBoxesFromText() {
@@ -813,6 +1169,41 @@ function refreshPinyinBoxesFromText() {
   render();
   saveState();
 }));
+
+els.useCompleteDict.addEventListener("input", () => {
+  saveState();
+  setStatus(
+    els.useCompleteDict.checked
+      ? "已打开完整拼音词典，正在刷新并加载词典..."
+      : "已关闭完整拼音词典，正在刷新并恢复默认词典...",
+    "pending"
+  );
+  window.setTimeout(() => window.location.reload(), 120);
+});
+
+[
+  els.aiPinyinEnabled,
+  els.aiApiUrl,
+  els.aiToken,
+  els.aiModel,
+].forEach((el) => el.addEventListener("input", () => {
+  if (el === els.aiPinyinEnabled) {
+    refreshPinyinBoxesFromText();
+    renderPinyinPairEditors();
+    render();
+  }
+  saveState();
+  scheduleAiPinyinRefresh(0);
+}));
+
+els.clearAiCacheBtn.addEventListener("click", () => {
+  clearAiPinyinCache();
+  setAiDebug(
+    { action: "clearAiPinyinCache" },
+    { cached: false, message: "AI 缓存已清空。" }
+  );
+  setStatus("AI 缓存已清空，下次会重新请求 AI。", "success");
+});
 
 [els.pinyinInput, els.pinyinInputPinyin].forEach((el) => el.addEventListener("input", () => {
   render();
@@ -877,6 +1268,7 @@ document.addEventListener("click", (event) => {
   render();
   renderPinyinPairEditors();
   saveState();
+  scheduleAiPinyinRefresh();
 }));
 
 els.prevPageBtn.addEventListener("click", () => {
@@ -935,7 +1327,7 @@ els.exportTextBtn.addEventListener("click", () => {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-  els.status.textContent = `已导出 ${pages.length} 页文字。`;
+  setStatus(`已导出 ${pages.length} 页文字。`, "success");
 });
 
 els.importTextBtn.addEventListener("click", () => {
@@ -972,9 +1364,9 @@ els.importTextFile.addEventListener("change", async () => {
     loadActivePageToInputs();
     render();
     saveState();
-    els.status.textContent = `已导入 ${pages.length} 页文字。`;
+    setStatus(`已导入 ${pages.length} 页文字。`, "success");
   } catch {
-    els.status.textContent = "导入失败，请选择本工具导出的 JSON 文件。";
+    setStatus("导入失败，请选择本工具导出的 JSON 文件。", "error");
   }
 });
 
@@ -1000,7 +1392,7 @@ els.printBtn.addEventListener("click", () => window.print());
 
 els.exportPdfBtn.addEventListener("click", async () => {
   if (!window.html2canvas || !window.jspdf?.jsPDF) {
-    els.status.textContent = "PDF 导出库未加载，请联网后刷新，或先使用打印保存为 PDF。";
+    setStatus("PDF 导出库未加载，请联网后刷新，或先使用打印保存为 PDF。", "error");
     return;
   }
 
@@ -1011,7 +1403,7 @@ els.exportPdfBtn.addEventListener("click", async () => {
   const date = new Date().toISOString().slice(0, 10);
   const fileName = `pinyin-tianzige-${date}.pdf`;
   els.exportPdfBtn.disabled = true;
-  els.status.textContent = "正在导出 PDF...";
+  setStatus("正在导出 PDF...", "pending");
 
   try {
     const pdf = new window.jspdf.jsPDF({
@@ -1040,14 +1432,45 @@ els.exportPdfBtn.addEventListener("click", async () => {
     }
 
     pdf.save(fileName);
-    els.status.textContent = `已导出 ${fileName}`;
+    setStatus(`已导出 ${fileName}`, "success");
   } catch {
-    els.status.textContent = "PDF 导出失败，请先用打印保存为 PDF。";
+    setStatus("PDF 导出失败，请先用打印保存为 PDF。", "error");
   } finally {
     document.body.classList.remove("pdf-rendering");
     els.exportPdfBtn.disabled = false;
   }
 });
 
-restoreState();
-render();
+async function initializeApp() {
+  const startupState = loadState();
+  if (startupState.aiPinyinEnabled !== undefined) {
+    els.aiPinyinEnabled.checked = Boolean(startupState.aiPinyinEnabled);
+  }
+  if (startupState.useCompleteDict !== undefined) {
+    els.useCompleteDict.checked = Boolean(startupState.useCompleteDict);
+  }
+
+  let startupDictError = "";
+  if (els.useCompleteDict.checked && shouldUsePinyinPro()) {
+    setStatus("正在加载完整拼音词典...", "pending");
+    try {
+      await loadCompletePinyinDict();
+    } catch (error) {
+      startupDictError = error.message || "完整拼音词典加载失败，已改用默认词典。";
+      els.useCompleteDict.checked = false;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        ...startupState,
+        useCompleteDict: false,
+      }));
+    }
+  }
+
+  restoreState();
+  render();
+  if (startupDictError) {
+    setStatus(startupDictError, "error");
+  }
+  scheduleAiPinyinRefresh(0);
+}
+
+initializeApp();

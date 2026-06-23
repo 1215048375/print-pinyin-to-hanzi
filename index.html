@@ -24,6 +24,41 @@
         </div>
       </div>
 
+      <p class="status" id="status"></p>
+
+      <div class="ai-settings">
+        <label class="ai-toggle"><input id="aiPinyinEnabled" type="checkbox"> AI 正音</label>
+        <label class="field compact">
+          <span>API URL</span>
+          <input id="aiApiUrl" type="url" value="https://aihubmix.com/v1" placeholder="https://api.openai.com/v1">
+        </label>
+        <label class="field compact">
+          <span>Token</span>
+          <input id="aiToken" type="password" autocomplete="off" placeholder="sk-...">
+        </label>
+        <label class="field compact">
+          <span>Model</span>
+          <input id="aiModel" type="text" value="gpt-4.1-mini" placeholder="gpt-4.1-mini">
+        </label>
+      </div>
+
+      <details class="ai-debug">
+        <summary>AI Debug</summary>
+        <div class="ai-debug-actions">
+          <button class="secondary-button" id="clearAiCacheBtn" type="button">清空AI缓存</button>
+        </div>
+        <div class="ai-debug-grid">
+          <label>
+            <span>发送</span>
+            <textarea id="aiDebugRequest" readonly rows="7"></textarea>
+          </label>
+          <label>
+            <span>收到</span>
+            <textarea id="aiDebugResponse" readonly rows="7"></textarea>
+          </label>
+        </div>
+      </details>
+
       <div class="page-nav" aria-label="页面编辑">
         <button id="prevPageBtn" type="button">上一页</button>
         <span id="pageIndicator">第 1 页 / 共 1 页</span>
@@ -124,19 +159,17 @@
         <label><input id="showGuides" type="checkbox" checked> 显示虚线</label>
         <label><input id="includeAnswers" type="checkbox" checked> 生成答案页</label>
         <label><input id="fillBlankPage" type="checkbox" checked> 空白页填满田字格</label>
+        <label><input id="useCompleteDict" type="checkbox"> 完整拼音词典</label>
       </div>
 
       <label class="field">
         <span>页眉标题</span>
         <input id="sheetTitle" type="text" value="拼音田字格练习">
       </label>
-
-      <p class="status" id="status"></p>
     </aside>
   </main>
 
   <script src="./libs/pinyin-pro.js"></script>
-  <script src="./libs/pinyin-pro-complete-dict.js"></script>
   <script src="./libs/html2canvas.min.js"></script>
   <script src="./libs/jspdf.umd.min.js"></script>
   <script src="./app.js"></script>
