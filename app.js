@@ -1,4 +1,11 @@
 const pinyin = window.pinyinPro?.pinyin;
+const addPinyinDict = window.pinyinPro?.addDict;
+const completePinyinDictLoaded = Boolean(addPinyinDict && window.PinyinProCompleteDict);
+
+if (completePinyinDictLoaded) {
+  addPinyinDict(window.PinyinProCompleteDict, "complete");
+}
+
 const STORAGE_KEY = "pinyin-tianzige-settings-v1";
 
 const els = {
