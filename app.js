@@ -35,6 +35,7 @@ const els = {
   cellSize: document.querySelector("#cellSize"),
   columns: document.querySelector("#columns"),
   rowGap: document.querySelector("#rowGap"),
+  gridLineWidth: document.querySelector("#gridLineWidth"),
   hanziScale: document.querySelector("#hanziScale"),
   pinyinScale: document.querySelector("#pinyinScale"),
   toneType: document.querySelector("#toneType"),
@@ -84,6 +85,7 @@ const savedFields = [
   "cellSize",
   "columns",
   "rowGap",
+  "gridLineWidth",
   "hanziScale",
   "pinyinScale",
   "toneType",
@@ -1110,6 +1112,10 @@ function buildItems(chars, pinyinList, toneType = els.toneType.value) {
       return { char, py, punctuation: false, question };
     }
 
+    if (char === "_") {
+      return { char: "", py: "", punctuation: false, fillBlank: true };
+    }
+
     return {
       char: char.trim() ? char : "",
       py: "",
@@ -1129,6 +1135,7 @@ function render() {
   els.root.style.setProperty("--pinyin-color", els.pinyinColor.value);
   els.root.style.setProperty("--cell-size", `${els.cellSize.value}mm`);
   els.root.style.setProperty("--row-gap", `${Number(els.rowGap.value) || 0}mm`);
+  els.root.style.setProperty("--grid-line", `${Number(els.gridLineWidth.value) || 0.45}mm`);
   els.root.style.setProperty("--hanzi-scale", (Number(els.hanziScale.value) || 100) / 100);
   els.root.style.setProperty("--pinyin-scale", (Number(els.pinyinScale.value) || 100) / 100);
   els.root.style.setProperty("--columns", columns);
@@ -1147,6 +1154,7 @@ function render() {
     const classes = [
       "cell",
       item.punctuation ? "punctuation" : "",
+      item.fillBlank ? "fill-blank" : "",
       gridIndex % columns === columns - 1 ? "row-end" : "",
     ].filter(Boolean);
     const cell = document.createElement("div");
@@ -1173,6 +1181,9 @@ function render() {
       visibility.highlightHanzi && highlightable ? "answer-highlight" : "",
     ].filter(Boolean).join(" ");
     hanzi.textContent = item.char;
+    if (item.fillBlank) {
+      hanzi.append(document.createElement("span"));
+    }
 
     cell.append(py, hanzi);
     return cell;
@@ -1339,6 +1350,7 @@ function refreshPinyinBoxesFromText() {
   els.cellSize,
   els.columns,
   els.rowGap,
+  els.gridLineWidth,
   els.hanziScale,
   els.pinyinScale,
   els.toneType,
